@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pipeline MD/JSON v3</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1>Pipeline MD/JSON <span class="version">v3</span></h1>
+                <p class="subtitle">Conversor Híbrido de Documentos</p>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Upload Section -->
+            <section class="upload-section card">
+                <h2>Upload de Documento</h2>
+
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📁</div>
+                    <p>Arraste um arquivo PDF ou DOCX aqui</p>
+                    <p class="upload-hint">ou clique para selecionar</p>
+                    <input type="file" id="fileInput" accept=".pdf,.docx,.doc" hidden>
+                </div>
+
+                <div class="file-info" id="fileInfo" style="display: none;">
+                    <div class="file-icon">📄</div>
+                    <div class="file-details">
+                        <span class="file-name" id="fileName"></span>
+                        <span class="file-size" id="fileSize"></span>
+                    </div>
+                    <button class="btn-clear" id="clearFile" title="Remover arquivo">✕</button>
+                </div>
+            </section>
+
+            <!-- Config Section -->
+            <section class="config-section card">
+                <h2>Configurações</h2>
+
+                <div class="config-grid">
+                    <div class="config-group">
+                        <h3>Processamento</h3>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="enableSchemaInference" checked>
+                            <span>Inferir schema do documento</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="extractEntities" checked>
+                            <span>Extrair entidades</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="preferVisionTables">
+                            <span>Usar visão para tabelas</span>
+                        </label>
+                    </div>
+
+                    <div class="config-group">
+                        <h3>Saída</h3>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="generateMarkdown" checked>
+                            <span>Gerar Markdown</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="generateJson" checked>
+                            <span>Gerar JSON</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="includeFrontmatter" checked>
+                            <span>Incluir frontmatter YAML</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="includeToc">
+                            <span>Incluir sumário</span>
+                        </label>
+                    </div>
+
+                    <div class="config-group">
+                        <h3>Chunks (RAG)</h3>
+                        <label class="range-label">
+                            Tamanho: <span id="chunkSizeValue">500</span> tokens
+                            <input type="range" id="chunkSize" min="100" max="1000" value="500" step="50">
+                        </label>
+                        <label class="range-label">
+                            Overlap: <span id="chunkOverlapValue">50</span> tokens
+                            <input type="range" id="chunkOverlap" min="0" max="100" value="50" step="10">
+                        </label>
+                    </div>
+                </div>
+
+                <button class="btn-primary" id="convertBtn" disabled>
+                    <span class="btn-icon">🚀</span>
+                    Converter Documento
+                </button>
+            </section>
+
+            <!-- Progress Section -->
+            <section class="progress-section card" id="progressSection" style="display: none;">
+                <h2>Processando</h2>
+
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-info">
+                        <span class="progress-stage" id="progressStage">Iniciando...</span>
+                        <span class="progress-percent" id="progressPercent">0%</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section class="results-section card" id="resultsSection" style="display: none;">
+                <h2>Resultados</h2>
+
+                <div class="result-summary" id="resultSummary">
+                    <div class="summary-item">
+                        <span class="summary-label">Tipo de documento:</span>
+                        <span class="summary-value" id="docType">-</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Confiança:</span>
+                        <div class="confidence-bar">
+                            <div class="confidence-fill" id="confidenceFill"></div>
+                        </div>
+                        <span class="summary-value" id="confidenceValue">-</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Tempo de processamento:</span>
+                        <span class="summary-value" id="processingTime">-</span>
+                    </div>
+                </div>
+
+                <div class="download-buttons">
+                    <button class="btn-download" id="downloadMd" disabled>
+                        <span class="btn-icon">📝</span>
+                        Download Markdown
+                    </button>
+                    <button class="btn-download" id="downloadJson" disabled>
+                        <span class="btn-icon">📋</span>
+                        Download JSON
+                    </button>
+                </div>
+
+                <!-- Tabs -->
+                <div class="result-tabs">
+                    <button class="tab-btn active" data-tab="markdown">Markdown</button>
+                    <button class="tab-btn" data-tab="json">JSON</button>
+                    <button class="tab-btn" data-tab="entities">Entidades</button>
+                    <button class="tab-btn" data-tab="structured">Schema</button>
+                </div>
+
+                <div class="tab-content">
+                    <div class="tab-pane active" id="tab-markdown">
+                        <pre class="code-block"><code id="markdownPreview"></code></pre>
+                    </div>
+                    <div class="tab-pane" id="tab-json">
+                        <pre class="code-block"><code id="jsonPreview"></code></pre>
+                    </div>
+                    <div class="tab-pane" id="tab-entities">
+                        <div id="entitiesPreview" class="entities-container"></div>
+                    </div>
+                    <div class="tab-pane" id="tab-structured">
+                        <pre class="code-block"><code id="structuredPreview"></code></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Error Section -->
+            <section class="error-section card" id="errorSection" style="display: none;">
+                <h2>Erro</h2>
+                <div class="error-message" id="errorMessage"></div>
+                <button class="btn-secondary" id="retryBtn">Tentar Novamente</button>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Pipeline MD/JSON v3.0.0 | Arquitetura Híbrida com Inferência de Schema</p>
+        </footer>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
