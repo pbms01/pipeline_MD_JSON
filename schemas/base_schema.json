@@ -1,0 +1,298 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HybridDocumentSchema",
+  "description": "Schema híbrido com camada fixa + camada dinâmica inferida",
+  "type": "object",
+  "required": ["metadata", "content", "processing_info"],
+
+  "properties": {
+
+    "metadata": {
+      "type": "object",
+      "description": "CAMADA FIXA: Metadados sempre presentes",
+      "required": ["id", "source_file"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "UUID único do documento"
+        },
+        "source_file": {
+          "type": "string",
+          "description": "Nome do arquivo original"
+        },
+        "title": {
+          "type": ["string", "null"],
+          "description": "Título extraído ou inferido"
+        },
+        "document_type": {
+          "type": "string",
+          "description": "Tipo inferido (contrato, laudo, manual, etc)"
+        },
+        "document_type_confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Confiança na classificação do tipo"
+        },
+        "authors": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "date": {
+          "type": ["string", "null"],
+          "format": "date"
+        },
+        "language": {
+          "type": "string",
+          "default": "pt"
+        },
+        "page_count": {
+          "type": "integer"
+        },
+        "keywords": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+
+    "content": {
+      "type": "object",
+      "description": "CAMADA FIXA: Conteúdo estruturado genérico",
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "Resumo executivo (sempre gerado)"
+        },
+        "sections": {
+          "type": "array",
+          "description": "Hierarquia de seções (estrutura genérica)",
+          "items": {"$ref": "#/definitions/section"}
+        },
+        "tables": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/table"}
+        },
+        "figures": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/figure"}
+        },
+        "raw_text": {
+          "type": "string",
+          "description": "Texto completo concatenado (opcional)"
+        }
+      }
+    },
+
+    "structured_data": {
+      "type": "object",
+      "description": "CAMADA DINÂMICA: Schema inferido específico do documento",
+      "properties": {
+        "_schema_inferred": {
+          "type": "boolean",
+          "description": "Flag indicando que estrutura foi inferida"
+        },
+        "_document_type": {
+          "type": "string",
+          "description": "Tipo de documento detectado"
+        },
+        "_schema_version": {
+          "type": "string",
+          "description": "Versão do schema inferido"
+        },
+        "_inference_model": {
+          "type": "string",
+          "description": "Modelo usado para inferência"
+        },
+        "_confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "_fields_explanation": {
+          "type": "object",
+          "description": "Explicação de por que cada campo foi incluído",
+          "additionalProperties": {"type": "string"}
+        }
+      },
+      "additionalProperties": true
+    },
+
+    "entities": {
+      "type": "object",
+      "description": "CAMADA FIXA: Entidades nomeadas (estrutura padronizada)",
+      "properties": {
+        "people": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {"type": "string"},
+              "role": {"type": ["string", "null"]},
+              "mentions": {"type": "integer"}
+            }
+          }
+        },
+        "organizations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {"type": "string"},
+              "type": {"type": ["string", "null"]},
+              "mentions": {"type": "integer"}
+            }
+          }
+        },
+        "locations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {"type": "string"},
+              "type": {"type": "string"},
+              "mentions": {"type": "integer"}
+            }
+          }
+        },
+        "dates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "original": {"type": "string"},
+              "normalized": {"type": ["string", "null"]},
+              "context": {"type": ["string", "null"]}
+            }
+          }
+        },
+        "monetary_values": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "original": {"type": "string"},
+              "value": {"type": ["number", "null"]},
+              "currency": {"type": ["string", "null"]},
+              "context": {"type": ["string", "null"]}
+            }
+          }
+        },
+        "technical_terms": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+
+    "chunks": {
+      "type": "array",
+      "description": "CAMADA FIXA: Chunks para RAG (sempre presentes)",
+      "items": {"$ref": "#/definitions/chunk"}
+    },
+
+    "processing_info": {
+      "type": "object",
+      "description": "CAMADA FIXA: Informações de processamento",
+      "properties": {
+        "converted_at": {"type": "string", "format": "date-time"},
+        "pipeline_version": {"type": "string"},
+        "processing_time_seconds": {"type": "number"},
+        "tokens_used": {"type": "integer"},
+        "vision_calls": {"type": "integer"},
+        "schema_inference_used": {"type": "boolean"},
+        "confidence_scores": {
+          "type": "object",
+          "properties": {
+            "overall": {"type": "number"},
+            "text_extraction": {"type": "number"},
+            "structure_detection": {"type": "number"},
+            "schema_inference": {"type": "number"},
+            "entity_extraction": {"type": "number"}
+          }
+        },
+        "warnings": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    }
+  },
+
+  "definitions": {
+    "section": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string"},
+        "title": {"type": "string"},
+        "level": {"type": "integer", "minimum": 1, "maximum": 6},
+        "content": {"type": "string"},
+        "page_start": {"type": "integer"},
+        "page_end": {"type": "integer"},
+        "subsections": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/section"}
+        }
+      }
+    },
+
+    "table": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string"},
+        "title": {"type": ["string", "null"]},
+        "page": {"type": "integer"},
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {"type": "string"},
+              "type": {"type": "string"}
+            }
+          }
+        },
+        "data": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {}
+          }
+        },
+        "has_merged_cells": {"type": "boolean"},
+        "source": {"type": "string"},
+        "confidence": {"type": "number"}
+      }
+    },
+
+    "figure": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string"},
+        "asset_path": {"type": "string"},
+        "title": {"type": ["string", "null"]},
+        "caption": {"type": ["string", "null"]},
+        "alt_text": {"type": ["string", "null"]},
+        "figure_type": {"type": "string"},
+        "page": {"type": "integer"}
+      }
+    },
+
+    "chunk": {
+      "type": "object",
+      "required": ["id", "text"],
+      "properties": {
+        "id": {"type": "string"},
+        "text": {"type": "string"},
+        "token_count": {"type": "integer"},
+        "section_id": {"type": ["string", "null"]},
+        "section_title": {"type": ["string", "null"]},
+        "page": {"type": "integer"},
+        "chunk_index": {"type": "integer"},
+        "has_table": {"type": "boolean"},
+        "has_figure": {"type": "boolean"},
+        "metadata": {"type": "object"}
+      }
+    }
+  }
+}
