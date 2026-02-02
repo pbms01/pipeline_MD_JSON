@@ -772,15 +772,55 @@ class SchemaInferrer:
                 logger.info(f"[TRACE] _create_safe_dict returned, type: {type(result).__name__}")
                 return result
             except json.JSONDecodeError as e:
-                logger.warning(f"JSON parse error: {e}")
+                logger.warning(f"JSON parse error at position {e.pos}: {e.msg}")
 
-                # Tentar reparar JSON
+                # Estratégia 1: Tentar truncar no último } válido antes do erro
+                if e.pos > 100:
+                    truncated = json_str[:e.pos]
+                    # Encontrar o último } que fecha um objeto válido
+                    last_brace = truncated.rfind("}")
+                    if last_brace > 0:
+                        # Tentar parsear até esse ponto
+                        for end_pos in range(last_brace, max(last_brace - 500, 0), -1):
+                            try:
+                                candidate = json_str[:end_pos + 1]
+                                # Balancear chaves
+                                open_count = candidate.count("{") - candidate.count("}")
+                                if open_count > 0:
+                                    candidate += "}" * open_count
+                                parsed = json.loads(candidate)
+                                logger.info(f"[TRACE] Recovered JSON by truncating at position {end_pos}")
+                                return self._create_safe_dict(parsed)
+                            except json.JSONDecodeError:
+                                continue
+
+                # Estratégia 2: Tentar reparar aspas simples
                 try:
                     fixed = re.sub(r"'([^']+)':", r'"\1":', json_str)
                     parsed = json.loads(fixed)
                     return self._create_safe_dict(parsed)
                 except json.JSONDecodeError:
                     pass
+
+                # Estratégia 3: Tentar remover a última parte problemática
+                try:
+                    # Remover tudo após o último objeto/array completo
+                    lines = json_str.split('\n')
+                    for i in range(len(lines) - 1, 0, -1):
+                        partial = '\n'.join(lines[:i])
+                        # Balancear chaves
+                        open_braces = partial.count("{") - partial.count("}")
+                        open_brackets = partial.count("[") - partial.count("]")
+                        if open_braces >= 0 and open_brackets >= 0:
+                            partial += "]" * open_brackets + "}" * open_braces
+                            try:
+                                parsed = json.loads(partial)
+                                logger.info(f"[TRACE] Recovered JSON by removing last {len(lines) - i} lines")
+                                return self._create_safe_dict(parsed)
+                            except json.JSONDecodeError:
+                                continue
+                except Exception as recovery_err:
+                    logger.debug(f"Recovery strategy 3 failed: {recovery_err}")
 
                 return self._create_safe_dict({
                     "_error": f"JSON parse error at position {e.pos}: {e.msg}",
