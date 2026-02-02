@@ -262,10 +262,14 @@ class EntityExtractor:
                 }]
             )
 
+            logger.info(f"[TRACE] entity_extractor: Got LLM response")
             result = self._parse_json_response(response.content[0].text)
+            logger.info(f"[TRACE] entity_extractor: _parse_json_response returned type: {type(result).__name__}")
 
             # Usar _safe_get para evitar KeyError com chaves malformadas
+            logger.info(f"[TRACE] entity_extractor: About to call _safe_get for 'people'")
             people_list = self._safe_get(result, "people", [])
+            logger.info(f"[TRACE] entity_extractor: _safe_get for 'people' returned")
             orgs_list = self._safe_get(result, "organizations", [])
             locations_list = self._safe_get(result, "locations", [])
             dates_list = self._safe_get(result, "dates", [])
@@ -442,6 +446,7 @@ class EntityExtractor:
 
     def _parse_json_response(self, text: str) -> Dict[str, Any]:
         """Extrai JSON da resposta."""
+        logger.info(f"[TRACE] entity_extractor._parse_json_response started")
         text = text.strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
@@ -453,13 +458,19 @@ class EntityExtractor:
 
         if start >= 0 and end > start:
             try:
+                logger.info(f"[TRACE] entity_extractor: About to call json.loads")
                 parsed = json.loads(text[start:end])
+                logger.info(f"[TRACE] entity_extractor: json.loads succeeded")
                 # CRÍTICO: Criar dict completamente novo e limpo
+                logger.info(f"[TRACE] entity_extractor: About to call _create_safe_dict")
                 result = self._create_safe_dict(parsed)
+                logger.info(f"[TRACE] entity_extractor: _create_safe_dict returned")
                 return result
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                logger.warning(f"[TRACE] entity_extractor: json.loads failed: {e}")
                 pass
 
+        logger.info(f"[TRACE] entity_extractor: returning empty dict")
         return {}
 
 

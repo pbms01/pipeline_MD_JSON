@@ -339,10 +339,10 @@ class SchemaInferrer:
 
             # Parsear resposta
             raw_response = response.content[0].text
-            logger.debug(f"Raw LLM response (first 500 chars): {raw_response[:500]}")
+            logger.info(f"[TRACE] Got LLM response, length: {len(raw_response)}")
 
             result = self._parse_json_response(raw_response)
-            logger.debug(f"Parsed result type: {type(result)}")
+            logger.info(f"[TRACE] _parse_json_response returned type: {type(result).__name__}")
 
             # Verificar se result é um dicionário válido
             if not isinstance(result, dict):
@@ -352,14 +352,12 @@ class SchemaInferrer:
                     document_type
                 )
 
-            # Log das chaves do resultado para debug
+            # Log das chaves do resultado
             try:
                 keys = list(result.keys())
-                logger.debug(f"Result keys: {keys}")
-                for k in keys:
-                    logger.debug(f"  Key repr: {repr(k)}, type: {type(k)}")
+                logger.info(f"[TRACE] Result has {len(keys)} keys: {keys[:5]}...")
             except Exception as e:
-                logger.error(f"Error listing result keys: {e}")
+                logger.error(f"[TRACE] Error listing result keys: {e}")
 
             # Verificar se houve erro no parsing usando try-except completo
             has_error = False
@@ -377,8 +375,12 @@ class SchemaInferrer:
                 logger.warning(f"Schema inference returned error: {error_msg}")
                 return self._create_error_schema(error_msg, document_type, raw_text)
 
+            logger.info(f"[TRACE] About to call _validate_and_complete_schema")
+
             # Validar e completar estrutura
             result = self._validate_and_complete_schema(result, source_filename)
+
+            logger.info(f"[TRACE] _validate_and_complete_schema returned successfully")
 
             # Extrair tipo de documento e confiança
             doc_type = self._extract_document_type(result, document_type)
@@ -660,11 +662,9 @@ class SchemaInferrer:
 
     def _parse_json_response(self, text: str) -> Dict[str, Any]:
         """Extrai JSON da resposta do LLM e retorna um dict completamente limpo."""
+        logger.info(f"[TRACE] _parse_json_response started, input length: {len(text)}")
         original_text = text
         text = text.strip()
-
-        # Log para debug
-        logger.debug(f"Parsing response of length {len(text)}")
 
         # Remover marcadores de código (várias formas)
         code_block_pattern = r'```(?:json)?\s*\n([\s\S]*?)\n```'
@@ -733,10 +733,13 @@ class SchemaInferrer:
             json_str = re.sub(r',\s*]', ']', json_str)
 
             try:
+                logger.info(f"[TRACE] About to call json.loads")
                 parsed = json.loads(json_str)
+                logger.info(f"[TRACE] json.loads succeeded, type: {type(parsed).__name__}")
                 # CRÍTICO: Criar dict completamente novo e limpo
+                logger.info(f"[TRACE] About to call _create_safe_dict")
                 result = self._create_safe_dict(parsed)
-                logger.debug(f"Successfully parsed and cleaned JSON")
+                logger.info(f"[TRACE] _create_safe_dict returned, type: {type(result).__name__}")
                 return result
             except json.JSONDecodeError as e:
                 logger.warning(f"JSON parse error: {e}")
