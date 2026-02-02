@@ -32,6 +32,7 @@ from .models import (
     ExtractedEntities, Person, Organization, Location,
     DateMention, MonetaryValue
 )
+from .text_normalizer import normalize_text
 from config.settings import CLAUDE_MODEL
 
 logger = logging.getLogger(__name__)
@@ -268,12 +269,23 @@ class EntityExtractor:
             return ExtractedEntities()
 
         try:
+            # Normalizar texto para economia de tokens
+            normalized_text = normalize_text(
+                text,
+                max_chars=20000,
+                remove_headers_footers=True,
+                compact_whitespace=True,
+                remove_page_numbers=True,
+                deduplicate_lines=True
+            )
+            logger.info(f"[NORMALIZE] Entity extraction: {len(text)} -> {len(normalized_text)} chars")
+
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=2048,
                 messages=[{
                     "role": "user",
-                    "content": ENTITY_EXTRACTION_PROMPT.replace("{document_text}", text)
+                    "content": ENTITY_EXTRACTION_PROMPT.replace("{document_text}", normalized_text)
                 }]
             )
 

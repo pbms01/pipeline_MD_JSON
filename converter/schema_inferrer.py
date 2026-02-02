@@ -55,6 +55,7 @@ except ImportError:
     HAS_ANTHROPIC = False
 
 from .models import InferredSchema
+from .text_normalizer import normalize_text, get_reduction_stats
 from config.settings import CLAUDE_MODEL, PROMPTS_DIR
 
 logger = logging.getLogger(__name__)
@@ -352,10 +353,23 @@ class SchemaInferrer:
             InferredSchema com estrutura completa de análise documental
         """
         try:
-            # Truncar se necessário
-            text_to_analyze = document_text[:max_chars]
-            if len(document_text) > max_chars:
-                text_to_analyze += "\n\n[... documento truncado para análise ...]"
+            # Normalizar texto para economia de tokens
+            original_len = len(document_text)
+            text_to_analyze = normalize_text(
+                document_text,
+                max_chars=max_chars,
+                remove_headers_footers=True,
+                compact_whitespace=True,
+                remove_page_numbers=True,
+                deduplicate_lines=True
+            )
+
+            # Log de estatísticas de redução
+            stats = get_reduction_stats(document_text[:max_chars], text_to_analyze)
+            logger.info(
+                f"[NORMALIZE] Text optimization: {stats['original_chars']} -> {stats['normalized_chars']} chars "
+                f"({stats['char_reduction_pct']}% reduction, ~{stats['estimated_token_savings']} tokens saved)"
+            )
 
             # Chamar LLM
             response = self.client.messages.create(
