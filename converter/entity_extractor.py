@@ -264,42 +264,50 @@ class EntityExtractor:
 
             result = self._parse_json_response(response.content[0].text)
 
+            # Usar _safe_get para evitar KeyError com chaves malformadas
+            people_list = self._safe_get(result, "people", [])
+            orgs_list = self._safe_get(result, "organizations", [])
+            locations_list = self._safe_get(result, "locations", [])
+            dates_list = self._safe_get(result, "dates", [])
+            money_list = self._safe_get(result, "monetary_values", [])
+            terms_list = self._safe_get(result, "technical_terms", [])
+
             return ExtractedEntities(
                 people=[
-                    Person(name=p["name"], role=p.get("role"))
-                    for p in result.get("people", [])
-                    if isinstance(p, dict) and "name" in p
+                    Person(name=p.get("name", ""), role=p.get("role"))
+                    for p in (people_list or [])
+                    if isinstance(p, dict) and p.get("name")
                 ],
                 organizations=[
-                    Organization(name=o["name"], org_type=o.get("type"))
-                    for o in result.get("organizations", [])
-                    if isinstance(o, dict) and "name" in o
+                    Organization(name=o.get("name", ""), org_type=o.get("type"))
+                    for o in (orgs_list or [])
+                    if isinstance(o, dict) and o.get("name")
                 ],
                 locations=[
-                    Location(name=l["name"], location_type=l.get("type", "other"))
-                    for l in result.get("locations", [])
-                    if isinstance(l, dict) and "name" in l
+                    Location(name=l.get("name", ""), location_type=l.get("type", "other"))
+                    for l in (locations_list or [])
+                    if isinstance(l, dict) and l.get("name")
                 ],
                 dates=[
                     DateMention(
-                        original=d["original"],
+                        original=d.get("original", ""),
                         normalized=d.get("normalized"),
                         context=d.get("context")
                     )
-                    for d in result.get("dates", [])
-                    if isinstance(d, dict) and "original" in d
+                    for d in (dates_list or [])
+                    if isinstance(d, dict) and d.get("original")
                 ],
                 monetary_values=[
                     MonetaryValue(
-                        original=m["original"],
+                        original=m.get("original", ""),
                         value=m.get("value"),
                         currency=m.get("currency"),
                         context=m.get("context")
                     )
-                    for m in result.get("monetary_values", [])
-                    if isinstance(m, dict) and "original" in m
+                    for m in (money_list or [])
+                    if isinstance(m, dict) and m.get("original")
                 ],
-                technical_terms=result.get("technical_terms", [])
+                technical_terms=terms_list if isinstance(terms_list, list) else []
             )
         except Exception as e:
             logger.warning(f"Error extracting entities via LLM: {e}")
@@ -349,6 +357,56 @@ class EntityExtractor:
             technical_terms=llm_entities.technical_terms
         )
 
+    def _safe_get(self, d: Dict, key: str, default=None):
+        """Obtém valor de dict de forma segura, lidando com chaves malformadas."""
+        if not isinstance(d, dict):
+            return default
+        try:
+            if key in d:
+                return d[key]
+        except (KeyError, TypeError):
+            pass
+
+        # Tentar encontrar chave similar
+        try:
+            items = list(d.items())
+            for k, v in items:
+                try:
+                    if isinstance(k, str):
+                        clean_k = k.strip().strip('"').strip("'").strip()
+                        if clean_k == key:
+                            return v
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        return default
+
+    def _clean_dict_keys(self, obj) -> Any:
+        """Limpa recursivamente chaves de dicionários."""
+        if isinstance(obj, dict):
+            clean_dict = {}
+            try:
+                items = list(obj.items())
+            except Exception:
+                return {}
+
+            for item in items:
+                try:
+                    key, value = item
+                    if isinstance(key, str):
+                        clean_key = key.strip().strip('"').strip("'").strip()
+                        if clean_key and '\n' not in clean_key:
+                            clean_dict[clean_key] = self._clean_dict_keys(value)
+                except Exception:
+                    continue
+            return clean_dict
+        elif isinstance(obj, list):
+            return [self._clean_dict_keys(item) for item in obj if item is not None]
+        else:
+            return obj
+
     def _parse_json_response(self, text: str) -> Dict[str, Any]:
         """Extrai JSON da resposta."""
         text = text.strip()
@@ -362,7 +420,10 @@ class EntityExtractor:
 
         if start >= 0 and end > start:
             try:
-                return json.loads(text[start:end])
+                result = json.loads(text[start:end])
+                # Limpar chaves malformadas
+                result = self._clean_dict_keys(result)
+                return result
             except json.JSONDecodeError:
                 pass
 

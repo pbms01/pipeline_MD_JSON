@@ -448,15 +448,27 @@ class SchemaInferrer:
             """Obtém valor de dict de forma segura, ignorando chaves malformadas."""
             if not isinstance(d, dict):
                 return default
-            # Tentar chave direta
-            if key in d:
-                return d[key]
+            try:
+                # Tentar chave direta primeiro
+                if key in d:
+                    return d[key]
+            except (KeyError, TypeError):
+                pass
+
             # Tentar encontrar chave similar (com espaços/aspas)
-            for k, v in d.items():
-                if isinstance(k, str):
-                    clean_k = k.strip().strip('"').strip("'").strip()
-                    if clean_k == key:
-                        return v
+            try:
+                items = list(d.items())  # Converter para lista para evitar problemas de iteração
+                for k, v in items:
+                    try:
+                        if isinstance(k, str):
+                            clean_k = k.strip().strip('"').strip("'").strip()
+                            if clean_k == key:
+                                return v
+                    except Exception:
+                        continue
+            except Exception as e:
+                logger.debug(f"Error iterating dict in safe_get: {e}")
+
             return default
 
         # Copiar metadata
@@ -612,21 +624,38 @@ class SchemaInferrer:
         """Limpa recursivamente chaves de dicionários."""
         if isinstance(obj, dict):
             clean_dict = {}
-            for key, value in obj.items():
-                if isinstance(key, str):
-                    # Limpar key de caracteres problemáticos
-                    clean_key = key.strip()
-                    # Remover aspas extras no início/fim
-                    if clean_key.startswith('"') and clean_key.endswith('"'):
-                        clean_key = clean_key[1:-1]
-                    # Ignorar chaves malformadas
-                    if clean_key and '\n' not in clean_key and '\r' not in clean_key:
-                        clean_dict[clean_key] = self._clean_dict_keys(value)
-                else:
-                    clean_dict[key] = self._clean_dict_keys(value)
+            try:
+                items = list(obj.items())  # Converter para lista primeiro
+            except Exception as e:
+                logger.warning(f"Error getting dict items: {e}")
+                return {}
+
+            for item in items:
+                try:
+                    key, value = item
+                    if isinstance(key, str):
+                        # Limpar key de caracteres problemáticos
+                        clean_key = key.strip()
+                        # Remover aspas extras no início/fim
+                        if clean_key.startswith('"') and clean_key.endswith('"'):
+                            clean_key = clean_key[1:-1]
+                        # Ignorar chaves malformadas
+                        if clean_key and '\n' not in clean_key and '\r' not in clean_key:
+                            clean_dict[clean_key] = self._clean_dict_keys(value)
+                    else:
+                        clean_dict[key] = self._clean_dict_keys(value)
+                except Exception as e:
+                    logger.debug(f"Error processing dict item: {e}")
+                    continue
             return clean_dict
         elif isinstance(obj, list):
-            return [self._clean_dict_keys(item) for item in obj]
+            result = []
+            for item in obj:
+                try:
+                    result.append(self._clean_dict_keys(item))
+                except Exception:
+                    continue
+            return result
         else:
             return obj
 
