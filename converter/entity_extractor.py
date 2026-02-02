@@ -258,7 +258,7 @@ class EntityExtractor:
                 max_tokens=2048,
                 messages=[{
                     "role": "user",
-                    "content": ENTITY_EXTRACTION_PROMPT.format(document_text=text)
+                    "content": ENTITY_EXTRACTION_PROMPT.replace("{document_text}", text)
                 }]
             )
 

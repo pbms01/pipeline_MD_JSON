@@ -188,9 +188,10 @@ class VisionProcessor:
         """
         start_time = time.time()
 
-        prompt = PAGE_VISION_PROMPT.format(
-            page_number=page_number,
-            total_pages=total_pages
+        prompt = PAGE_VISION_PROMPT.replace(
+            "{page_number}", str(page_number)
+        ).replace(
+            "{total_pages}", str(total_pages)
         )
 
         response = self._call_vision_api(image_bytes, prompt)

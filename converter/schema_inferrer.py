@@ -331,9 +331,7 @@ class SchemaInferrer:
                 max_tokens=8192,  # Aumentado para schema completo
                 messages=[{
                     "role": "user",
-                    "content": self.inference_prompt.format(
-                        document_text=text_to_analyze
-                    )
+                    "content": self.inference_prompt.replace("{document_text}", text_to_analyze)
                 }]
             )
 
