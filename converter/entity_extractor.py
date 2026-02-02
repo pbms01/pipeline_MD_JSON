@@ -361,21 +361,25 @@ class EntityExtractor:
         """Obtém valor de dict de forma segura, lidando com chaves malformadas."""
         if not isinstance(d, dict):
             return default
+
+        # Usar get() que é mais seguro que 'in' + acesso
         try:
-            if key in d:
-                return d[key]
-        except (KeyError, TypeError):
+            val = d.get(key)
+            if val is not None:
+                return val
+        except Exception:
             pass
 
-        # Tentar encontrar chave similar
+        # Fallback: iterar pelas chaves buscando match
         try:
-            items = list(d.items())
-            for k, v in items:
+            for k in list(d.keys()):
                 try:
+                    if k == key:
+                        return d.get(k, default)
                     if isinstance(k, str):
                         clean_k = k.strip().strip('"').strip("'").strip()
                         if clean_k == key:
-                            return v
+                            return d.get(k, default)
                 except Exception:
                     continue
         except Exception:

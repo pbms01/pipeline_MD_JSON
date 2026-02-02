@@ -448,26 +448,29 @@ class SchemaInferrer:
             """Obtém valor de dict de forma segura, ignorando chaves malformadas."""
             if not isinstance(d, dict):
                 return default
+
+            # Usar get() que é mais seguro que 'in' + acesso
             try:
-                # Tentar chave direta primeiro
-                if key in d:
-                    return d[key]
-            except (KeyError, TypeError):
+                val = d.get(key)
+                if val is not None:
+                    return val
+            except Exception:
                 pass
 
-            # Tentar encontrar chave similar (com espaços/aspas)
+            # Fallback: iterar pelas chaves buscando match
             try:
-                items = list(d.items())  # Converter para lista para evitar problemas de iteração
-                for k, v in items:
+                for k in list(d.keys()):
                     try:
+                        if k == key:
+                            return d.get(k, default)
                         if isinstance(k, str):
                             clean_k = k.strip().strip('"').strip("'").strip()
                             if clean_k == key:
-                                return v
+                                return d.get(k, default)
                     except Exception:
                         continue
-            except Exception as e:
-                logger.debug(f"Error iterating dict in safe_get: {e}")
+            except Exception:
+                pass
 
             return default
 
@@ -555,9 +558,13 @@ class SchemaInferrer:
         """Extrai o tipo de documento do resultado."""
         doc_type = None
 
-        # Tentar extrair de metadata
-        if "metadata" in result and isinstance(result["metadata"], dict):
-            doc_type = result["metadata"].get("documentType")
+        # Usar acesso seguro via get()
+        try:
+            metadata = result.get("metadata") if isinstance(result, dict) else None
+            if isinstance(metadata, dict):
+                doc_type = metadata.get("documentType")
+        except Exception as e:
+            logger.debug(f"Error extracting document type: {e}")
 
         # Fallback
         if not doc_type:
@@ -570,46 +577,60 @@ class SchemaInferrer:
         score = 0.0
         max_score = 0.0
 
-        # Metadata (peso 0.1)
-        max_score += 0.1
-        if "metadata" in result:
-            meta = result["metadata"]
-            if meta.get("title") and meta.get("documentType"):
-                score += 0.1
-            elif meta.get("title") or meta.get("documentType"):
-                score += 0.05
+        if not isinstance(result, dict):
+            return 0.3
 
-        # Entities (peso 0.3)
-        max_score += 0.3
-        if "entities" in result:
-            entities = result["entities"]
-            # Actors
-            if entities.get("actors") and len(entities["actors"]) > 0:
-                score += 0.1
-            # Events
-            if entities.get("events") and len(entities["events"]) > 0:
-                score += 0.1
-            # Relationships
-            if entities.get("relationships") and len(entities["relationships"]) > 0:
-                score += 0.1
+        try:
+            # Metadata (peso 0.1)
+            max_score += 0.1
+            meta = result.get("metadata")
+            if isinstance(meta, dict):
+                if meta.get("title") and meta.get("documentType"):
+                    score += 0.1
+                elif meta.get("title") or meta.get("documentType"):
+                    score += 0.05
 
-        # Analysis (peso 0.3)
-        max_score += 0.3
-        if "analysis" in result:
-            analysis = result["analysis"]
-            if analysis.get("findings") and len(analysis["findings"]) > 0:
-                score += 0.15
-            if analysis.get("recommendations") and len(analysis["recommendations"]) > 0:
-                score += 0.15
+            # Entities (peso 0.3)
+            max_score += 0.3
+            entities = result.get("entities")
+            if isinstance(entities, dict):
+                # Actors
+                actors = entities.get("actors")
+                if isinstance(actors, list) and len(actors) > 0:
+                    score += 0.1
+                # Events
+                events = entities.get("events")
+                if isinstance(events, list) and len(events) > 0:
+                    score += 0.1
+                # Relationships
+                rels = entities.get("relationships")
+                if isinstance(rels, list) and len(rels) > 0:
+                    score += 0.1
 
-        # Synthesis (peso 0.3)
-        max_score += 0.3
-        if "synthesis" in result:
-            synthesis = result["synthesis"]
-            if synthesis.get("executiveSummary"):
-                score += 0.15
-            if synthesis.get("conclusions") and len(synthesis["conclusions"]) > 0:
-                score += 0.15
+            # Analysis (peso 0.3)
+            max_score += 0.3
+            analysis = result.get("analysis")
+            if isinstance(analysis, dict):
+                findings = analysis.get("findings")
+                if isinstance(findings, list) and len(findings) > 0:
+                    score += 0.15
+                recs = analysis.get("recommendations")
+                if isinstance(recs, list) and len(recs) > 0:
+                    score += 0.15
+
+            # Synthesis (peso 0.3)
+            max_score += 0.3
+            synthesis = result.get("synthesis")
+            if isinstance(synthesis, dict):
+                if synthesis.get("executiveSummary"):
+                    score += 0.15
+                conclusions = synthesis.get("conclusions")
+                if isinstance(conclusions, list) and len(conclusions) > 0:
+                    score += 0.15
+
+        except Exception as e:
+            logger.debug(f"Error calculating confidence: {e}")
+            return 0.3
 
         # Normalizar para 0-1
         confidence = score / max_score if max_score > 0 else 0.0
