@@ -387,29 +387,58 @@ class EntityExtractor:
 
         return default
 
-    def _clean_dict_keys(self, obj) -> Any:
-        """Limpa recursivamente chaves de dicionários."""
+    def _create_safe_dict(self, obj) -> Any:
+        """Cria uma estrutura de dados completamente nova e segura."""
+        if obj is None:
+            return None
+
         if isinstance(obj, dict):
-            clean_dict = {}
+            new_dict = {}
             try:
-                items = list(obj.items())
+                items_list = []
+                try:
+                    items_list = list(obj.items())
+                except Exception:
+                    return {}
+
+                for item in items_list:
+                    try:
+                        key, value = item
+                        if isinstance(key, str):
+                            clean_key = key.strip()
+                            # Remover caracteres problemáticos
+                            if '\n' in clean_key or '\r' in clean_key:
+                                clean_key = clean_key.replace('\n', '').replace('\r', '').strip()
+                                if clean_key.startswith('"') and clean_key.endswith('"'):
+                                    clean_key = clean_key[1:-1]
+                                clean_key = clean_key.strip()
+                            if clean_key and len(clean_key) < 100:
+                                new_dict[clean_key] = self._create_safe_dict(value)
+                        elif isinstance(key, (int, float, bool)):
+                            new_dict[str(key)] = self._create_safe_dict(value)
+                    except Exception:
+                        continue
             except Exception:
                 return {}
+            return new_dict
 
-            for item in items:
+        elif isinstance(obj, list):
+            new_list = []
+            for item in obj:
                 try:
-                    key, value = item
-                    if isinstance(key, str):
-                        clean_key = key.strip().strip('"').strip("'").strip()
-                        if clean_key and '\n' not in clean_key:
-                            clean_dict[clean_key] = self._clean_dict_keys(value)
+                    new_list.append(self._create_safe_dict(item))
                 except Exception:
                     continue
-            return clean_dict
-        elif isinstance(obj, list):
-            return [self._clean_dict_keys(item) for item in obj if item is not None]
-        else:
+            return new_list
+
+        elif isinstance(obj, (str, int, float, bool)):
             return obj
+
+        else:
+            try:
+                return str(obj)
+            except Exception:
+                return None
 
     def _parse_json_response(self, text: str) -> Dict[str, Any]:
         """Extrai JSON da resposta."""
@@ -424,9 +453,9 @@ class EntityExtractor:
 
         if start >= 0 and end > start:
             try:
-                result = json.loads(text[start:end])
-                # Limpar chaves malformadas
-                result = self._clean_dict_keys(result)
+                parsed = json.loads(text[start:end])
+                # CRÍTICO: Criar dict completamente novo e limpo
+                result = self._create_safe_dict(parsed)
                 return result
             except json.JSONDecodeError:
                 pass

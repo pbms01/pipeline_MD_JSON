@@ -342,6 +342,7 @@ class SchemaInferrer:
             logger.debug(f"Raw LLM response (first 500 chars): {raw_response[:500]}")
 
             result = self._parse_json_response(raw_response)
+            logger.debug(f"Parsed result type: {type(result)}")
 
             # Verificar se result é um dicionário válido
             if not isinstance(result, dict):
@@ -351,14 +352,30 @@ class SchemaInferrer:
                     document_type
                 )
 
-            # Verificar se houve erro no parsing
-            if "_error" in result:
-                logger.warning(f"Schema inference returned error: {result.get('_error')}")
-                return self._create_error_schema(
-                    result.get("_error", "Unknown error"),
-                    document_type,
-                    result.get("_raw_text")
-                )
+            # Log das chaves do resultado para debug
+            try:
+                keys = list(result.keys())
+                logger.debug(f"Result keys: {keys}")
+                for k in keys:
+                    logger.debug(f"  Key repr: {repr(k)}, type: {type(k)}")
+            except Exception as e:
+                logger.error(f"Error listing result keys: {e}")
+
+            # Verificar se houve erro no parsing usando try-except completo
+            has_error = False
+            error_msg = None
+            raw_text = None
+            try:
+                has_error = "_error" in result
+                if has_error:
+                    error_msg = result.get("_error", "Unknown error")
+                    raw_text = result.get("_raw_text")
+            except Exception as e:
+                logger.error(f"Error checking for _error key: {e}")
+
+            if has_error:
+                logger.warning(f"Schema inference returned error: {error_msg}")
+                return self._create_error_schema(error_msg, document_type, raw_text)
 
             # Validar e completar estrutura
             result = self._validate_and_complete_schema(result, source_filename)
@@ -641,47 +658,8 @@ class SchemaInferrer:
 
         return round(confidence, 2)
 
-    def _clean_dict_keys(self, obj: Any) -> Any:
-        """Limpa recursivamente chaves de dicionários."""
-        if isinstance(obj, dict):
-            clean_dict = {}
-            try:
-                items = list(obj.items())  # Converter para lista primeiro
-            except Exception as e:
-                logger.warning(f"Error getting dict items: {e}")
-                return {}
-
-            for item in items:
-                try:
-                    key, value = item
-                    if isinstance(key, str):
-                        # Limpar key de caracteres problemáticos
-                        clean_key = key.strip()
-                        # Remover aspas extras no início/fim
-                        if clean_key.startswith('"') and clean_key.endswith('"'):
-                            clean_key = clean_key[1:-1]
-                        # Ignorar chaves malformadas
-                        if clean_key and '\n' not in clean_key and '\r' not in clean_key:
-                            clean_dict[clean_key] = self._clean_dict_keys(value)
-                    else:
-                        clean_dict[key] = self._clean_dict_keys(value)
-                except Exception as e:
-                    logger.debug(f"Error processing dict item: {e}")
-                    continue
-            return clean_dict
-        elif isinstance(obj, list):
-            result = []
-            for item in obj:
-                try:
-                    result.append(self._clean_dict_keys(item))
-                except Exception:
-                    continue
-            return result
-        else:
-            return obj
-
     def _parse_json_response(self, text: str) -> Dict[str, Any]:
-        """Extrai JSON da resposta do LLM."""
+        """Extrai JSON da resposta do LLM e retorna um dict completamente limpo."""
         original_text = text
         text = text.strip()
 
@@ -689,22 +667,18 @@ class SchemaInferrer:
         logger.debug(f"Parsing response of length {len(text)}")
 
         # Remover marcadores de código (várias formas)
-        # Usar regex mais robusto
         code_block_pattern = r'```(?:json)?\s*\n([\s\S]*?)\n```'
         matches = re.findall(code_block_pattern, text)
         if matches:
-            # Usar o maior bloco encontrado
             text = max(matches, key=len)
             logger.debug(f"Found code block, extracted {len(text)} chars")
         else:
-            # Tentar outro padrão
             code_block_pattern2 = r'```(?:json)?(.*?)```'
             matches2 = re.findall(code_block_pattern2, text, re.DOTALL)
             if matches2:
                 text = max(matches2, key=len)
                 logger.debug(f"Found code block (pattern 2), extracted {len(text)} chars")
             else:
-                # Fallback: remover marcadores manualmente
                 if text.startswith("```json"):
                     text = text[7:]
                 elif text.startswith("```"):
@@ -718,7 +692,7 @@ class SchemaInferrer:
         start = text.find("{")
         if start < 0:
             logger.warning("No JSON object found in response")
-            return {"_error": "No JSON object found", "_raw_text": original_text[:500]}
+            return self._create_safe_dict({"_error": "No JSON object found", "_raw_text": original_text[:500]})
 
         # Encontrar o fechamento balanceado
         brace_count = 0
@@ -759,31 +733,91 @@ class SchemaInferrer:
             json_str = re.sub(r',\s*]', ']', json_str)
 
             try:
-                result = json.loads(json_str)
-                # Limpar chaves recursivamente
-                result = self._clean_dict_keys(result)
-                logger.debug(f"Successfully parsed JSON with keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
+                parsed = json.loads(json_str)
+                # CRÍTICO: Criar dict completamente novo e limpo
+                result = self._create_safe_dict(parsed)
+                logger.debug(f"Successfully parsed and cleaned JSON")
                 return result
             except json.JSONDecodeError as e:
                 logger.warning(f"JSON parse error: {e}")
-                logger.debug(f"Attempted to parse: {json_str[:300]}...")
 
                 # Tentar reparar JSON
                 try:
                     fixed = re.sub(r"'([^']+)':", r'"\1":', json_str)
-                    result = json.loads(fixed)
-                    result = self._clean_dict_keys(result)
-                    return result
+                    parsed = json.loads(fixed)
+                    return self._create_safe_dict(parsed)
                 except json.JSONDecodeError:
                     pass
 
-                return {
+                return self._create_safe_dict({
                     "_error": f"JSON parse error at position {e.pos}: {e.msg}",
                     "_raw_text": json_str[:500]
-                }
+                })
 
         logger.warning("No valid JSON structure found")
-        return {"_error": "No valid JSON found", "_raw_text": original_text[:500]}
+        return self._create_safe_dict({"_error": "No valid JSON found", "_raw_text": original_text[:500]})
+
+    def _create_safe_dict(self, obj: Any) -> Any:
+        """Cria uma estrutura de dados completamente nova e segura."""
+        if obj is None:
+            return None
+
+        if isinstance(obj, dict):
+            # Criar novo dict do zero
+            new_dict = {}
+            try:
+                # Iterar de forma segura
+                items_list = []
+                try:
+                    items_list = list(obj.items())
+                except Exception as e:
+                    logger.debug(f"Error getting items: {e}")
+                    return {}
+
+                for item in items_list:
+                    try:
+                        key, value = item
+                        # Validar e limpar a chave
+                        if isinstance(key, str):
+                            clean_key = key.strip()
+                            # Remover caracteres problemáticos
+                            if '\n' in clean_key or '\r' in clean_key:
+                                # Tentar extrair a parte válida da chave
+                                clean_key = clean_key.replace('\n', '').replace('\r', '').strip()
+                                if clean_key.startswith('"') and clean_key.endswith('"'):
+                                    clean_key = clean_key[1:-1]
+                                clean_key = clean_key.strip()
+                            # Só adicionar se a chave for válida
+                            if clean_key and len(clean_key) < 100:
+                                new_dict[clean_key] = self._create_safe_dict(value)
+                        elif isinstance(key, (int, float, bool)):
+                            new_dict[str(key)] = self._create_safe_dict(value)
+                    except Exception as e:
+                        logger.debug(f"Error processing item: {e}")
+                        continue
+            except Exception as e:
+                logger.debug(f"Error in _create_safe_dict for dict: {e}")
+                return {}
+            return new_dict
+
+        elif isinstance(obj, list):
+            new_list = []
+            for item in obj:
+                try:
+                    new_list.append(self._create_safe_dict(item))
+                except Exception:
+                    continue
+            return new_list
+
+        elif isinstance(obj, (str, int, float, bool)):
+            return obj
+
+        else:
+            # Para outros tipos, tentar converter para string
+            try:
+                return str(obj)
+            except Exception:
+                return None
 
     # Manter métodos legados para compatibilidade
     def detect_document_type(
