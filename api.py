@@ -15,6 +15,11 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from datetime import datetime
 import logging
+import os
+
+# Carregar variáveis de ambiente do arquivo .env
+from dotenv import load_dotenv
+load_dotenv()
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
