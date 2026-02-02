@@ -5,13 +5,22 @@ Este módulo extrai entidades padronizadas (pessoas, organizações, datas, etc.
 que fazem parte da camada fixa do JSON.
 """
 import json
+import os
 import re
 from typing import Dict, Any, List, Optional
+from pathlib import Path
 import logging
 
 # Carregar variáveis de ambiente
 from dotenv import load_dotenv
-load_dotenv()
+
+# Tentar carregar .env do diretório do projeto
+_project_root = Path(__file__).parent.parent
+_env_file = _project_root / ".env"
+if _env_file.exists():
+    load_dotenv(_env_file)
+else:
+    load_dotenv()  # Fallback para busca padrão
 
 try:
     import anthropic

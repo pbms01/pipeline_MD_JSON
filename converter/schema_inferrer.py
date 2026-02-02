@@ -13,6 +13,7 @@ Schema estruturado:
 - synthesis: Síntese conclusiva
 """
 import json
+import os
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 import logging
@@ -22,7 +23,19 @@ import re
 
 # Carregar variáveis de ambiente
 from dotenv import load_dotenv
-load_dotenv()
+
+# Tentar carregar .env do diretório do projeto
+_project_root = Path(__file__).parent.parent
+_env_file = _project_root / ".env"
+if _env_file.exists():
+    load_dotenv(_env_file)
+else:
+    load_dotenv()  # Fallback para busca padrão
+
+# Verificar se a API key está disponível
+_api_key = os.getenv("ANTHROPIC_API_KEY")
+if not _api_key:
+    logging.warning("ANTHROPIC_API_KEY not found in environment. Schema inference will fail.")
 
 try:
     import anthropic
