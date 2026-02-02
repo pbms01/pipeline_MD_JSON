@@ -807,87 +807,210 @@ class SchemaInferrer:
 
     def _try_recover_json(self, json_str: str, error_pos: int) -> Optional[Dict[str, Any]]:
         """Tenta recuperar um JSON válido de uma string com erros."""
+        logger.info(f"[RECOVERY] Starting recovery, error at position {error_pos}, total length {len(json_str)}")
 
-        # Estratégia 1: Truncar antes do erro e fechar estruturas
-        logger.debug(f"[RECOVERY] Strategy 1: Truncating before error position {error_pos}")
-        for pos in range(error_pos, max(error_pos - 2000, 100), -10):
-            candidate = json_str[:pos]
+        # Estratégia 1: Encontrar último objeto/array completo antes do erro
+        logger.info("[RECOVERY] Strategy 1: Finding last complete structure")
 
-            # Encontrar última estrutura completa
-            # Procurar por padrões como: }, ou ], ou "value"
-            last_complete = -1
-            for pattern_pos in range(len(candidate) - 1, max(0, len(candidate) - 500), -1):
-                char = candidate[pattern_pos]
-                if char in '},]':
-                    last_complete = pattern_pos
-                    break
+        # Procurar por padrões de fechamento válidos antes do erro
+        # Padrões: }, ], "valor" seguido de } ou ]
+        search_start = max(0, error_pos - 5000)
+        search_text = json_str[search_start:error_pos]
 
-            if last_complete > 0:
-                truncated = candidate[:last_complete + 1]
+        # Encontrar todas as posições de fechamento de objetos/arrays
+        close_positions = []
+        for i, char in enumerate(search_text):
+            if char in '}]':
+                close_positions.append(search_start + i)
 
-                # Contar chaves e colchetes abertos
-                open_braces = truncated.count('{') - truncated.count('}')
-                open_brackets = truncated.count('[') - truncated.count(']')
+        # Tentar do mais próximo do erro para trás
+        for close_pos in reversed(close_positions[-50:]):  # Últimas 50 posições
+            candidate = json_str[:close_pos + 1]
 
-                # Fechar estruturas abertas
-                if open_braces >= 0 and open_brackets >= 0:
-                    truncated += ']' * open_brackets + '}' * open_braces
-
-                    try:
-                        parsed = json.loads(truncated)
-                        logger.info(f"[RECOVERY] Success at position {last_complete}")
-                        return self._create_safe_dict(parsed)
-                    except json.JSONDecodeError:
-                        continue
-
-        # Estratégia 2: Buscar seções principais e reconstruir
-        logger.debug("[RECOVERY] Strategy 2: Extracting main sections")
-        sections = {}
-        section_patterns = [
-            (r'"metadata"\s*:\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', "metadata"),
-            (r'"entities"\s*:\s*\{[^{}]*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}[^{}]*)*\}', "entities"),
-            (r'"analysis"\s*:\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', "analysis"),
-            (r'"synthesis"\s*:\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', "synthesis"),
-        ]
-
-        for pattern, name in section_patterns:
-            try:
-                match = re.search(pattern, json_str, re.DOTALL)
-                if match:
-                    section_json = '{' + match.group(0) + '}'
-                    try:
-                        parsed_section = json.loads(section_json)
-                        sections[name] = parsed_section.get(name, {})
-                    except json.JSONDecodeError:
-                        pass
-            except Exception:
-                pass
-
-        if sections:
-            logger.info(f"[RECOVERY] Extracted {len(sections)} sections: {list(sections.keys())}")
-            return self._create_safe_dict(sections)
-
-        # Estratégia 3: Remover linhas do final progressivamente
-        logger.debug("[RECOVERY] Strategy 3: Removing lines from end")
-        lines = json_str.split('\n')
-        for remove_count in range(1, min(100, len(lines) // 2)):
-            partial = '\n'.join(lines[:-remove_count])
-
-            # Fechar estruturas
-            open_braces = partial.count('{') - partial.count('}')
-            open_brackets = partial.count('[') - partial.count(']')
+            # Contar estruturas abertas (considerando strings)
+            open_braces, open_brackets = self._count_open_structures(candidate)
 
             if open_braces >= 0 and open_brackets >= 0:
-                partial += ']' * open_brackets + '}' * open_braces
+                # Fechar estruturas abertas
+                closing = ']' * open_brackets + '}' * open_braces
+                test_json = candidate + closing
 
                 try:
-                    parsed = json.loads(partial)
-                    logger.info(f"[RECOVERY] Success by removing {remove_count} lines")
+                    parsed = json.loads(test_json)
+                    logger.info(f"[RECOVERY] Strategy 1 success at position {close_pos}")
                     return self._create_safe_dict(parsed)
                 except json.JSONDecodeError:
                     continue
 
+        # Estratégia 2: Truncar no último } ou ] válido e fechar estruturas
+        logger.info("[RECOVERY] Strategy 2: Progressive truncation with structure closing")
+
+        # Tentar posições progressivamente menores
+        for target_pos in range(error_pos - 100, max(1000, error_pos - 10000), -100):
+            candidate = json_str[:target_pos]
+
+            # Encontrar o último fechamento válido
+            last_close = max(candidate.rfind('}'), candidate.rfind(']'))
+            if last_close > 0:
+                candidate = candidate[:last_close + 1]
+
+                open_braces, open_brackets = self._count_open_structures(candidate)
+
+                if open_braces >= 0 and open_brackets >= 0:
+                    closing = ']' * open_brackets + '}' * open_braces
+                    test_json = candidate + closing
+
+                    try:
+                        parsed = json.loads(test_json)
+                        logger.info(f"[RECOVERY] Strategy 2 success at position {last_close}")
+                        return self._create_safe_dict(parsed)
+                    except json.JSONDecodeError:
+                        continue
+
+        # Estratégia 3: Extrair seções individuais com regex melhorado
+        logger.info("[RECOVERY] Strategy 3: Extracting individual sections")
+        sections = self._extract_sections_regex(json_str)
+        if sections:
+            logger.info(f"[RECOVERY] Strategy 3 extracted {len(sections)} sections: {list(sections.keys())}")
+            return self._create_safe_dict(sections)
+
+        # Estratégia 4: Remover linhas do final progressivamente
+        logger.info("[RECOVERY] Strategy 4: Removing lines from end")
+        lines = json_str.split('\n')
+
+        for remove_count in range(1, min(200, len(lines) - 10)):
+            partial = '\n'.join(lines[:-remove_count])
+
+            # Encontrar último fechamento
+            last_close = max(partial.rfind('}'), partial.rfind(']'))
+            if last_close > 0:
+                partial = partial[:last_close + 1]
+
+                open_braces, open_brackets = self._count_open_structures(partial)
+
+                if open_braces >= 0 and open_brackets >= 0:
+                    closing = ']' * open_brackets + '}' * open_braces
+                    test_json = partial + closing
+
+                    try:
+                        parsed = json.loads(test_json)
+                        logger.info(f"[RECOVERY] Strategy 4 success by removing {remove_count} lines")
+                        return self._create_safe_dict(parsed)
+                    except json.JSONDecodeError:
+                        continue
+
+        logger.warning("[RECOVERY] All strategies failed")
         return None
+
+    def _count_open_structures(self, text: str) -> tuple:
+        """Conta chaves e colchetes abertos, ignorando os que estão dentro de strings."""
+        open_braces = 0
+        open_brackets = 0
+        in_string = False
+        escape_next = False
+
+        for char in text:
+            if escape_next:
+                escape_next = False
+                continue
+            if char == '\\':
+                escape_next = True
+                continue
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if char == '{':
+                open_braces += 1
+            elif char == '}':
+                open_braces -= 1
+            elif char == '[':
+                open_brackets += 1
+            elif char == ']':
+                open_brackets -= 1
+
+        return open_braces, open_brackets
+
+    def _extract_sections_regex(self, json_str: str) -> Optional[Dict[str, Any]]:
+        """Extrai seções principais do JSON usando busca mais robusta."""
+        sections = {}
+
+        # Padrões para encontrar início de seções
+        section_names = ["metadata", "entities", "evidence", "analysis", "timeline", "synthesis"]
+
+        for name in section_names:
+            # Encontrar início da seção
+            pattern = rf'"{name}"\s*:\s*'
+            match = re.search(pattern, json_str)
+            if not match:
+                continue
+
+            start_pos = match.end()
+            if start_pos >= len(json_str):
+                continue
+
+            # Determinar se é objeto ou array
+            first_char = json_str[start_pos:start_pos+1].strip()
+            if not first_char:
+                continue
+
+            if first_char == '{':
+                # Encontrar o fechamento do objeto
+                content = self._extract_balanced_structure(json_str[start_pos:], '{', '}')
+            elif first_char == '[':
+                # Encontrar o fechamento do array
+                content = self._extract_balanced_structure(json_str[start_pos:], '[', ']')
+            else:
+                continue
+
+            if content:
+                try:
+                    parsed = json.loads(content)
+                    sections[name] = parsed
+                except json.JSONDecodeError:
+                    # Tentar fechar estruturas abertas
+                    open_braces, open_brackets = self._count_open_structures(content)
+                    if open_braces >= 0 and open_brackets >= 0:
+                        fixed = content + ']' * open_brackets + '}' * open_braces
+                        try:
+                            parsed = json.loads(fixed)
+                            sections[name] = parsed
+                        except json.JSONDecodeError:
+                            pass
+
+        return sections if sections else None
+
+    def _extract_balanced_structure(self, text: str, open_char: str, close_char: str) -> Optional[str]:
+        """Extrai uma estrutura balanceada (objeto ou array) do início do texto."""
+        if not text or text[0] != open_char:
+            return None
+
+        count = 0
+        in_string = False
+        escape_next = False
+
+        for i, char in enumerate(text):
+            if escape_next:
+                escape_next = False
+                continue
+            if char == '\\':
+                escape_next = True
+                continue
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if char == open_char:
+                count += 1
+            elif char == close_char:
+                count -= 1
+                if count == 0:
+                    return text[:i + 1]
+
+        # Se não fechou, retornar o que temos
+        return text if count > 0 else None
 
     def _create_safe_dict(self, obj: Any) -> Any:
         """Cria uma estrutura de dados completamente nova e segura."""
