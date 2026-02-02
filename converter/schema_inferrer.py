@@ -412,39 +412,116 @@ class SchemaInferrer:
     ) -> Dict[str, Any]:
         """Valida e completa o schema com valores padrão."""
 
-        # Limpar chaves malformadas (com newlines ou caracteres inválidos)
-        clean_result = {}
-        for key, value in list(result.items()):
-            if isinstance(key, str):
-                # Limpar key de caracteres problemáticos
-                clean_key = key.strip().strip('"').strip("'")
-                # Ignorar chaves que começam com newline ou são vazias
-                if clean_key and not clean_key.startswith('\n') and not clean_key.startswith('\\n'):
-                    clean_result[clean_key] = value
-            else:
-                clean_result[key] = value
+        # Criar estrutura limpa do zero e copiar dados válidos
+        clean_schema = {
+            "metadata": {},
+            "entities": {
+                "actors": [],
+                "documents": [],
+                "assets": [],
+                "events": [],
+                "relationships": []
+            },
+            "evidence": {
+                "documentary": [],
+                "testimonial": [],
+                "technical": [],
+                "digital": []
+            },
+            "analysis": {
+                "findings": [],
+                "issues": [],
+                "recommendations": []
+            },
+            "timeline": [],
+            "synthesis": {
+                "executiveSummary": "",
+                "keyPoints": [],
+                "conclusions": [],
+                "openQuestions": [],
+                "nextSteps": []
+            }
+        }
 
-        result = clean_result
+        # Função auxiliar para obter valor de forma segura
+        def safe_get(d, key, default=None):
+            """Obtém valor de dict de forma segura, ignorando chaves malformadas."""
+            if not isinstance(d, dict):
+                return default
+            # Tentar chave direta
+            if key in d:
+                return d[key]
+            # Tentar encontrar chave similar (com espaços/aspas)
+            for k, v in d.items():
+                if isinstance(k, str):
+                    clean_k = k.strip().strip('"').strip("'").strip()
+                    if clean_k == key:
+                        return v
+            return default
 
-        # Garantir estrutura metadata
-        if "metadata" not in result:
-            result["metadata"] = {}
+        # Copiar metadata
+        src_metadata = safe_get(result, "metadata", {})
+        if isinstance(src_metadata, dict):
+            for field in ["id", "title", "documentType", "analysisDate", "version",
+                          "status", "confidentiality", "tags", "notes", "sourceFiles"]:
+                val = safe_get(src_metadata, field)
+                if val is not None:
+                    clean_schema["metadata"][field] = val
 
-        # Garantir que metadata é um dicionário
-        if not isinstance(result["metadata"], dict):
-            logger.warning(f"metadata is not a dict: {type(result['metadata'])}")
-            result["metadata"] = {}
+        # Copiar entities
+        src_entities = safe_get(result, "entities", {})
+        if isinstance(src_entities, dict):
+            for entity_type in ["actors", "documents", "assets", "events", "relationships"]:
+                val = safe_get(src_entities, entity_type, [])
+                if isinstance(val, list):
+                    clean_schema["entities"][entity_type] = val
 
+        # Copiar evidence
+        src_evidence = safe_get(result, "evidence", {})
+        if isinstance(src_evidence, dict):
+            for ev_type in ["documentary", "testimonial", "technical", "digital"]:
+                val = safe_get(src_evidence, ev_type, [])
+                if isinstance(val, list):
+                    clean_schema["evidence"][ev_type] = val
+
+        # Copiar analysis
+        src_analysis = safe_get(result, "analysis", {})
+        if isinstance(src_analysis, dict):
+            for an_type in ["findings", "issues", "recommendations"]:
+                val = safe_get(src_analysis, an_type, [])
+                if isinstance(val, list):
+                    clean_schema["analysis"][an_type] = val
+
+        # Copiar timeline
+        src_timeline = safe_get(result, "timeline", [])
+        if isinstance(src_timeline, list):
+            clean_schema["timeline"] = src_timeline
+
+        # Copiar synthesis
+        src_synthesis = safe_get(result, "synthesis", {})
+        if isinstance(src_synthesis, dict):
+            val = safe_get(src_synthesis, "executiveSummary", "")
+            if isinstance(val, str):
+                clean_schema["synthesis"]["executiveSummary"] = val
+            for field in ["keyPoints", "conclusions", "openQuestions", "nextSteps"]:
+                val = safe_get(src_synthesis, field, [])
+                if isinstance(val, list):
+                    clean_schema["synthesis"][field] = val
+
+        # Usar resultado limpo
+        result = clean_schema
+
+        # Completar campos obrigatórios de metadata
         metadata = result["metadata"]
-        if "id" not in metadata or not metadata.get("id"):
+        if not metadata.get("id"):
             metadata["id"] = f"doc-{uuid.uuid4().hex[:8]}"
-        if "analysisDate" not in metadata:
+        if not metadata.get("analysisDate"):
             metadata["analysisDate"] = date.today().isoformat()
         if "version" not in metadata:
             metadata["version"] = 1
-        if "status" not in metadata:
+        if not metadata.get("status"):
             metadata["status"] = "draft"
-        if "confidentiality" not in metadata:
+        if not metadata.get("confidentiality"):
             metadata["confidentiality"] = "internal"
         if "tags" not in metadata:
             metadata["tags"] = []
@@ -455,53 +532,6 @@ class SchemaInferrer:
                 "filename": source_filename,
                 "format": Path(source_filename).suffix.lstrip(".") if source_filename else "unknown"
             }]
-
-        # Garantir estrutura entities
-        if "entities" not in result or not isinstance(result.get("entities"), dict):
-            result["entities"] = {}
-
-        entities = result["entities"]
-        for key in ["actors", "documents", "assets", "events", "relationships"]:
-            if key not in entities or not isinstance(entities.get(key), list):
-                entities[key] = []
-
-        # Garantir estrutura evidence
-        if "evidence" not in result or not isinstance(result.get("evidence"), dict):
-            result["evidence"] = {}
-
-        evidence = result["evidence"]
-        for key in ["documentary", "testimonial", "technical", "digital"]:
-            if key not in evidence or not isinstance(evidence.get(key), list):
-                evidence[key] = []
-
-        # Garantir estrutura analysis
-        if "analysis" not in result or not isinstance(result.get("analysis"), dict):
-            result["analysis"] = {}
-
-        analysis = result["analysis"]
-        for key in ["findings", "issues", "recommendations"]:
-            if key not in analysis or not isinstance(analysis.get(key), list):
-                analysis[key] = []
-
-        # Garantir timeline
-        if "timeline" not in result or not isinstance(result.get("timeline"), list):
-            result["timeline"] = []
-
-        # Garantir synthesis
-        if "synthesis" not in result or not isinstance(result.get("synthesis"), dict):
-            result["synthesis"] = {}
-
-        synthesis = result["synthesis"]
-        if "executiveSummary" not in synthesis or not isinstance(synthesis.get("executiveSummary"), str):
-            synthesis["executiveSummary"] = ""
-        if "keyPoints" not in synthesis or not isinstance(synthesis.get("keyPoints"), list):
-            synthesis["keyPoints"] = []
-        if "conclusions" not in synthesis or not isinstance(synthesis.get("conclusions"), list):
-            synthesis["conclusions"] = []
-        if "openQuestions" not in synthesis or not isinstance(synthesis.get("openQuestions"), list):
-            synthesis["openQuestions"] = []
-        if "nextSteps" not in synthesis or not isinstance(synthesis.get("nextSteps"), list):
-            synthesis["nextSteps"] = []
 
         return result
 
