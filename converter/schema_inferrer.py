@@ -27,14 +27,25 @@ from dotenv import load_dotenv
 # Tentar carregar .env do diretório do projeto
 _project_root = Path(__file__).parent.parent
 _env_file = _project_root / ".env"
+
+# Log para diagnóstico
+logging.info(f"[DOTENV] Project root: {_project_root}")
+logging.info(f"[DOTENV] Looking for .env at: {_env_file}")
+logging.info(f"[DOTENV] .env exists: {_env_file.exists()}")
+
 if _env_file.exists():
     load_dotenv(_env_file)
+    logging.info(f"[DOTENV] Loaded .env from: {_env_file}")
 else:
-    load_dotenv()  # Fallback para busca padrão
+    # Tentar busca padrão
+    load_dotenv()
+    logging.info("[DOTENV] Used default dotenv search")
 
 # Verificar se a API key está disponível
 _api_key = os.getenv("ANTHROPIC_API_KEY")
-if not _api_key:
+if _api_key:
+    logging.info(f"[DOTENV] ANTHROPIC_API_KEY found (length: {len(_api_key)})")
+else:
     logging.warning("ANTHROPIC_API_KEY not found in environment. Schema inference will fail.")
 
 try:
