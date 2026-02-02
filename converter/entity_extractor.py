@@ -9,6 +9,10 @@ import re
 from typing import Dict, Any, List, Optional
 import logging
 
+# Carregar variáveis de ambiente
+from dotenv import load_dotenv
+load_dotenv()
+
 try:
     import anthropic
     HAS_ANTHROPIC = True

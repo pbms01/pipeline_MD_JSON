@@ -20,6 +20,10 @@ from datetime import date
 import uuid
 import re
 
+# Carregar variáveis de ambiente
+from dotenv import load_dotenv
+load_dotenv()
+
 try:
     import anthropic
     HAS_ANTHROPIC = True
