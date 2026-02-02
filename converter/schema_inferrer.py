@@ -1,16 +1,17 @@
 """
-schema_inferrer.py - Infere estrutura semântica do documento usando Schema de Análise Estruturada.
+schema_inferrer.py - Descobre indutivamente a estrutura semântica de documentos via LLM.
 
-Este módulo implementa inferência de schema seguindo uma arquitetura padronizada
-para extração, estruturação e análise de informações documentais.
+Este módulo implementa inferência de schema usando uma abordagem INDUTIVA:
+em vez de preencher um schema predefinido, o LLM descobre a estrutura
+natural de cada documento com base em seu conteúdo.
 
-Schema estruturado:
-- metadata: Metadados do documento
-- entities: Atores, documentos, ativos, eventos, relacionamentos
-- evidence: Elementos probatórios
-- analysis: Achados, problemas, recomendações
-- timeline: Linha do tempo consolidada
-- synthesis: Síntese conclusiva
+Schema indutivo retornado:
+- documentType: Tipo identificado (contrato, ata, laudo, processo, etc.)
+- title: Título descritivo
+- date: Data do documento (se identificada)
+- summary: Resumo em 2-3 frases
+- schema: Descrição da estrutura descoberta
+- extractedData: Dados extraídos conforme a estrutura específica do documento
 """
 import json
 import os
@@ -61,57 +62,102 @@ from config.settings import CLAUDE_MODEL, PROMPTS_DIR
 logger = logging.getLogger(__name__)
 
 
-# === STRUCTURED ANALYSIS PROMPT ===
+# === INDUCTIVE SCHEMA DISCOVERY PROMPT ===
 
-STRUCTURED_ANALYSIS_PROMPT = """Analise o documento e extraia informações estruturadas em JSON.
+STRUCTURED_ANALYSIS_PROMPT = """Você é um especialista em análise documental. Sua tarefa é descobrir a ESTRUTURA NATURAL deste documento.
 
-IMPORTANTE: Seja CONCISO. Máximo 5 itens por array. Omita campos sem dados.
+## Instruções
 
-## Schema JSON (preencha apenas campos relevantes):
+1. **Identifique o tipo de documento** (contrato, ata, laudo, processo, relatório, etc.)
+
+2. **Descubra a estrutura inerente** - Cada tipo de documento tem sua própria organização natural:
+   - Contrato: partes, objeto, valor, prazo, obrigações, penalidades
+   - Ata: data, participantes, pauta, deliberações, encaminhamentos
+   - Laudo: objeto, metodologia, constatações, conclusão técnica
+   - Processo: partes, pedido, causa de pedir, provas, decisão
+   - Relatório: objetivo, metodologia, resultados, conclusões
+   - etc.
+
+3. **Extraia os dados** conforme a estrutura descoberta
+
+## Formato de Resposta (JSON)
 
 ```json
 {
-  "metadata": {
-    "id": "doc-[uuid-8chars]",
-    "title": "título descritivo curto",
-    "documentType": "tipo do documento",
-    "date": "YYYY-MM-DD ou null",
-    "parties": ["partes principais envolvidas"],
-    "summary": "resumo em 1-2 frases"
+  "documentType": "tipo identificado",
+  "title": "título descritivo",
+  "date": "YYYY-MM-DD ou null",
+  "summary": "resumo em 2-3 frases",
+  "schema": {
+    "description": "breve descrição da estrutura do documento",
+    "sections": ["lista das seções principais identificadas"]
   },
-  "actors": [
-    {"name": "nome", "role": "papel/função", "type": "person|org|gov"}
-  ],
-  "keyDates": [
-    {"date": "YYYY-MM-DD", "event": "descrição curta"}
-  ],
-  "keyFacts": [
-    {"fact": "fato relevante", "source": "onde no documento"}
-  ],
-  "values": [
-    {"amount": 0, "currency": "BRL", "context": "contexto"}
-  ],
-  "issues": [
-    {"issue": "problema/irregularidade identificada", "severity": "high|medium|low"}
-  ],
-  "conclusions": [
-    {"conclusion": "conclusão principal", "confidence": "high|medium|low"}
-  ],
-  "recommendations": [
-    {"action": "ação recomendada", "priority": "high|medium|low"}
-  ]
+  "extractedData": {
+    // Estrutura ESPECÍFICA para este tipo de documento
+    // Use nomes de campos que façam sentido para ESTE documento
+    // Exemplos abaixo - adapte conforme o documento real
+  }
 }
 ```
 
-## Tipos de Documento
-processo_judicial, contrato, laudo_tecnico, relatorio, ata_reuniao, parecer, proposta, edital, outro
+## Exemplos de extractedData por tipo:
+
+**Contrato:**
+```json
+"extractedData": {
+  "partes": [{"nome": "", "papel": "contratante|contratado", "documento": ""}],
+  "objeto": "descrição do objeto",
+  "valor": {"total": 0, "moeda": "BRL", "formaPagamento": ""},
+  "vigencia": {"inicio": "", "fim": "", "prazo": ""},
+  "obrigacoes": {"contratante": [], "contratado": []},
+  "garantias": [],
+  "penalidades": [],
+  "foro": ""
+}
+```
+
+**Ata de Reunião:**
+```json
+"extractedData": {
+  "reuniao": {"data": "", "hora": "", "local": "", "tipo": ""},
+  "participantes": [{"nome": "", "cargo": "", "presenca": "presente|ausente"}],
+  "pauta": ["item1", "item2"],
+  "deliberacoes": [{"assunto": "", "decisao": "", "votos": ""}],
+  "encaminhamentos": [{"acao": "", "responsavel": "", "prazo": ""}]
+}
+```
+
+**Laudo/Parecer Técnico:**
+```json
+"extractedData": {
+  "identificacao": {"numero": "", "data": "", "solicitante": ""},
+  "objeto": "descrição do que foi analisado",
+  "metodologia": "como foi feita a análise",
+  "constatacoes": [{"item": "", "descricao": "", "evidencia": ""}],
+  "conclusao": "conclusão técnica",
+  "recomendacoes": []
+}
+```
+
+**Processo Judicial:**
+```json
+"extractedData": {
+  "processo": {"numero": "", "vara": "", "comarca": ""},
+  "partes": {"autor": [], "reu": [], "terceiros": []},
+  "objeto": "tipo de ação",
+  "pedidos": [],
+  "fundamentacao": "resumo dos fundamentos",
+  "provas": [],
+  "decisao": {"tipo": "", "dispositivo": "", "data": ""}
+}
+```
 
 ## Regras
-1. MÁXIMO 5 itens por array
-2. Omita seções sem dados (use arrays vazios [])
-3. Foque nos elementos MAIS IMPORTANTES
-4. Texto conciso e direto
-5. Retorne APENAS JSON válido, sem explicações
+1. DESCUBRA a estrutura - não force um schema predefinido
+2. Use campos que façam sentido para ESTE documento específico
+3. Seja conciso - máximo 5 itens por array
+4. Omita campos sem dados
+5. Retorne APENAS JSON válido
 
 ## Documento para Análise
 
@@ -121,15 +167,18 @@ processo_judicial, contrato, laudo_tecnico, relatorio, ata_reuniao, parecer, pro
 
 class SchemaInferrer:
     """
-    Infere schema estruturado do documento via LLM.
+    Descobre indutivamente o schema de documentos via LLM.
 
-    Implementa o Schema de Análise Documental Estruturada com:
-    - metadata: Informações do documento
-    - entities: Atores, documentos, ativos, eventos, relacionamentos
-    - evidence: Elementos probatórios
-    - analysis: Achados, problemas, recomendações
-    - timeline: Cronologia consolidada
-    - synthesis: Síntese conclusiva
+    Abordagem indutiva: o LLM analisa o documento e descobre sua estrutura
+    natural, em vez de preencher um schema predefinido.
+
+    Estrutura retornada:
+    - documentType: Tipo identificado (contrato, ata, laudo, etc.)
+    - title: Título descritivo
+    - date: Data do documento
+    - summary: Resumo conciso
+    - schema: Descrição da estrutura descoberta
+    - extractedData: Dados extraídos conforme estrutura específica
     """
 
     def __init__(
@@ -302,139 +351,114 @@ class SchemaInferrer:
         result: Dict[str, Any],
         source_filename: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Valida e completa o schema com valores padrão."""
-
-        # Criar estrutura limpa do zero e copiar dados válidos
-        clean_schema = {
-            "metadata": {},
-            "actors": [],
-            "keyDates": [],
-            "keyFacts": [],
-            "values": [],
-            "issues": [],
-            "conclusions": [],
-            "recommendations": []
-        }
+        """Valida e completa o schema indutivo com valores padrão."""
 
         # Função auxiliar para obter valor de forma segura
         def safe_get(d, key, default=None):
-            """Obtém valor de dict de forma segura, ignorando chaves malformadas."""
+            """Obtém valor de dict de forma segura."""
             if not isinstance(d, dict):
                 return default
-
-            # Usar get() que é mais seguro que 'in' + acesso
             try:
                 val = d.get(key)
                 if val is not None:
                     return val
             except Exception:
                 pass
-
-            # Fallback: iterar pelas chaves buscando match
-            try:
-                for k in list(d.keys()):
-                    try:
-                        if k == key:
-                            return d.get(k, default)
-                        if isinstance(k, str):
-                            clean_k = k.strip().strip('"').strip("'").strip()
-                            if clean_k == key:
-                                return d.get(k, default)
-                    except Exception:
-                        continue
-            except Exception:
-                pass
-
             return default
 
-        # Copiar metadata
-        src_metadata = safe_get(result, "metadata", {})
-        if isinstance(src_metadata, dict):
-            for field in ["id", "title", "documentType", "date", "parties", "summary"]:
-                val = safe_get(src_metadata, field)
-                if val is not None:
-                    clean_schema["metadata"][field] = val
+        # Criar estrutura limpa para schema indutivo
+        clean_schema = {
+            "documentType": safe_get(result, "documentType", "documento"),
+            "title": safe_get(result, "title", ""),
+            "date": safe_get(result, "date"),
+            "summary": safe_get(result, "summary", ""),
+            "schema": safe_get(result, "schema", {}),
+            "extractedData": safe_get(result, "extractedData", {})
+        }
 
-        # Copiar arrays do novo schema simplificado
-        for array_field in ["actors", "keyDates", "keyFacts", "values", "issues", "conclusions", "recommendations"]:
-            val = safe_get(result, array_field, [])
-            if isinstance(val, list):
-                clean_schema[array_field] = val[:5]  # Limitar a 5 itens
+        # Garantir que schema tem estrutura mínima
+        if not isinstance(clean_schema["schema"], dict):
+            clean_schema["schema"] = {}
+        if "description" not in clean_schema["schema"]:
+            clean_schema["schema"]["description"] = ""
+        if "sections" not in clean_schema["schema"]:
+            clean_schema["schema"]["sections"] = []
 
-        # Usar resultado limpo
-        result = clean_schema
+        # Garantir que extractedData é dict
+        if not isinstance(clean_schema["extractedData"], dict):
+            clean_schema["extractedData"] = {}
 
-        # Completar campos obrigatórios de metadata
-        metadata = result["metadata"]
-        if not metadata.get("id"):
-            metadata["id"] = f"doc-{uuid.uuid4().hex[:8]}"
-        if not metadata.get("date"):
-            metadata["date"] = date.today().isoformat()
+        # Adicionar metadados de processamento
+        clean_schema["_meta"] = {
+            "id": f"doc-{uuid.uuid4().hex[:8]}",
+            "processedAt": date.today().isoformat(),
+            "source": source_filename or "unknown"
+        }
 
-        # Adicionar source se fornecido
-        if source_filename:
-            metadata["source"] = source_filename
-
-        return result
+        return clean_schema
 
     def _extract_document_type(
         self,
         result: Dict[str, Any],
         fallback: Optional[str] = None
     ) -> str:
-        """Extrai o tipo de documento do resultado."""
+        """Extrai o tipo de documento do resultado indutivo."""
         doc_type = None
 
-        # Usar acesso seguro via get()
+        # Usar acesso seguro via get() - no schema indutivo, documentType está no nível raiz
         try:
-            metadata = result.get("metadata") if isinstance(result, dict) else None
-            if isinstance(metadata, dict):
-                doc_type = metadata.get("documentType")
+            if isinstance(result, dict):
+                doc_type = result.get("documentType")
         except Exception as e:
             logger.debug(f"Error extracting document type: {e}")
 
         # Fallback
-        if not doc_type:
+        if not doc_type or doc_type == "documento":
             doc_type = fallback or "documento_geral"
 
         return doc_type
 
     def _calculate_confidence(self, result: Dict[str, Any]) -> float:
-        """Calcula confiança baseado na completude do schema."""
+        """Calcula confiança baseado na completude do schema indutivo."""
         if not isinstance(result, dict):
             return 0.3
 
         score = 0.0
-        max_score = 5.0  # 5 categorias possíveis
+        max_score = 5.0  # 5 critérios
 
         try:
-            # Metadata (tem título e tipo?)
-            meta = result.get("metadata", {})
-            if meta.get("title") and meta.get("documentType"):
+            # 1. Tipo de documento identificado
+            doc_type = result.get("documentType", "")
+            if doc_type and doc_type != "documento":
                 score += 1.0
-            elif meta.get("title") or meta.get("documentType"):
+
+            # 2. Título e resumo presentes
+            title = result.get("title", "")
+            summary = result.get("summary", "")
+            if title and summary:
+                score += 1.0
+            elif title or summary:
                 score += 0.5
 
-            # Actors
-            actors = result.get("actors", [])
-            if isinstance(actors, list) and len(actors) > 0:
-                score += 1.0
+            # 3. Schema descoberto (seções identificadas)
+            schema = result.get("schema", {})
+            if isinstance(schema, dict):
+                sections = schema.get("sections", [])
+                if isinstance(sections, list) and len(sections) >= 2:
+                    score += 1.0
+                elif isinstance(sections, list) and len(sections) >= 1:
+                    score += 0.5
 
-            # Key Facts
-            facts = result.get("keyFacts", [])
-            if isinstance(facts, list) and len(facts) > 0:
+            # 4. Dados extraídos (extractedData não vazio)
+            extracted = result.get("extractedData", {})
+            if isinstance(extracted, dict) and len(extracted) >= 3:
                 score += 1.0
+            elif isinstance(extracted, dict) and len(extracted) >= 1:
+                score += 0.5
 
-            # Conclusions
-            conclusions = result.get("conclusions", [])
-            if isinstance(conclusions, list) and len(conclusions) > 0:
-                score += 1.0
-
-            # Issues ou Recommendations
-            issues = result.get("issues", [])
-            recs = result.get("recommendations", [])
-            if (isinstance(issues, list) and len(issues) > 0) or \
-               (isinstance(recs, list) and len(recs) > 0):
+            # 5. Data identificada
+            date_val = result.get("date")
+            if date_val:
                 score += 1.0
 
         except Exception as e:
@@ -676,8 +700,8 @@ class SchemaInferrer:
         """Extrai seções principais do JSON usando busca mais robusta."""
         sections = {}
 
-        # Padrões para encontrar início de seções (novo schema simplificado)
-        section_names = ["metadata", "actors", "keyDates", "keyFacts", "values", "issues", "conclusions", "recommendations"]
+        # Padrões para encontrar início de seções (schema indutivo)
+        section_names = ["documentType", "title", "date", "summary", "schema", "extractedData"]
 
         for name in section_names:
             # Encontrar início da seção
@@ -690,36 +714,70 @@ class SchemaInferrer:
             if start_pos >= len(json_str):
                 continue
 
-            # Determinar se é objeto ou array
-            first_char = json_str[start_pos:start_pos+1].strip()
-            if not first_char:
+            # Determinar o tipo de valor
+            remaining = json_str[start_pos:].lstrip()
+            if not remaining:
                 continue
+
+            first_char = remaining[0]
+            content = None
 
             if first_char == '{':
                 # Encontrar o fechamento do objeto
-                content = self._extract_balanced_structure(json_str[start_pos:], '{', '}')
+                content = self._extract_balanced_structure(remaining, '{', '}')
             elif first_char == '[':
                 # Encontrar o fechamento do array
-                content = self._extract_balanced_structure(json_str[start_pos:], '[', ']')
-            else:
-                continue
+                content = self._extract_balanced_structure(remaining, '[', ']')
+            elif first_char == '"':
+                # Extrair string
+                content = self._extract_string_value(remaining)
+            elif first_char in '0123456789-':
+                # Extrair número
+                num_match = re.match(r'-?\d+\.?\d*', remaining)
+                if num_match:
+                    content = num_match.group(0)
+            elif remaining.startswith('null'):
+                content = 'null'
+            elif remaining.startswith('true'):
+                content = 'true'
+            elif remaining.startswith('false'):
+                content = 'false'
 
             if content:
                 try:
                     parsed = json.loads(content)
                     sections[name] = parsed
                 except json.JSONDecodeError:
-                    # Tentar fechar estruturas abertas
-                    open_braces, open_brackets = self._count_open_structures(content)
-                    if open_braces >= 0 and open_brackets >= 0:
-                        fixed = content + ']' * open_brackets + '}' * open_braces
-                        try:
-                            parsed = json.loads(fixed)
-                            sections[name] = parsed
-                        except json.JSONDecodeError:
-                            pass
+                    # Tentar fechar estruturas abertas (para objetos/arrays)
+                    if first_char in '{[':
+                        open_braces, open_brackets = self._count_open_structures(content)
+                        if open_braces >= 0 and open_brackets >= 0:
+                            fixed = content + ']' * open_brackets + '}' * open_braces
+                            try:
+                                parsed = json.loads(fixed)
+                                sections[name] = parsed
+                            except json.JSONDecodeError:
+                                pass
 
         return sections if sections else None
+
+    def _extract_string_value(self, text: str) -> Optional[str]:
+        """Extrai uma string JSON do início do texto."""
+        if not text or text[0] != '"':
+            return None
+
+        escape_next = False
+        for i, char in enumerate(text[1:], 1):
+            if escape_next:
+                escape_next = False
+                continue
+            if char == '\\':
+                escape_next = True
+                continue
+            if char == '"':
+                return text[:i + 1]
+
+        return None
 
     def _extract_balanced_structure(self, text: str, open_char: str, close_char: str) -> Optional[str]:
         """Extrai uma estrutura balanceada (objeto ou array) do início do texto."""
