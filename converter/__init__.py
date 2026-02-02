@@ -205,13 +205,16 @@ def convert_document(
                 total_tokens += 2000  # Estimativa conservadora
 
             except Exception as e:
-                warnings.append(f"Schema inference failed: {e}")
-                logger.warning(f"Schema inference error: {e}")
+                import traceback
+                error_detail = f"{type(e).__name__}: {str(e)}"
+                warnings.append(f"Schema inference failed: {error_detail}")
+                logger.warning(f"Schema inference error: {error_detail}")
+                logger.debug(f"Schema inference traceback: {traceback.format_exc()}")
                 inferred_schema = InferredSchema(
                     schema_inferred=False,
                     document_type="unknown",
                     confidence=0.0,
-                    fields={"_error": str(e)}
+                    fields={"_error": error_detail, "_traceback": traceback.format_exc()[:500]}
                 )
 
             notify("schema_inference", 1, 1)

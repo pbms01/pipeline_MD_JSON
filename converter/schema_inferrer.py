@@ -898,10 +898,32 @@ class SchemaInferrer:
         # Parsear resposta
         result = self._parse_json_response(response.content[0].text)
 
-        # Extrair meta-campos
+        # Verificar se houve erro no parsing
+        if "_error" in result:
+            logger.warning(f"Schema inference returned error: {result.get('_error')}")
+            return InferredSchema(
+                schema_inferred=False,
+                document_type=document_type or "outro",
+                confidence=0.0,
+                fields=result,
+                inference_model=self.model
+            )
+
+        # Extrair meta-campos com validação
         doc_type = result.pop("_document_type", document_type or "outro")
+        if not isinstance(doc_type, str):
+            doc_type = str(doc_type) if doc_type else "outro"
+
         confidence = result.pop("_confidence", 0.8)
+        if not isinstance(confidence, (int, float)):
+            try:
+                confidence = float(confidence)
+            except (ValueError, TypeError):
+                confidence = 0.8
+
         explanations = result.pop("_fields_explanation", {})
+        if not isinstance(explanations, dict):
+            explanations = {}
 
         # Remover outros meta-campos que possam ter vindo
         for key in list(result.keys()):
@@ -961,12 +983,30 @@ class SchemaInferrer:
 
         result = self._parse_json_response(response.content[0].text)
 
-        # Forçar tipo conhecido
-        result["_document_type"] = document_type
+        # Verificar se houve erro no parsing
+        if "_error" in result:
+            logger.warning(f"Schema inference (known type) returned error: {result.get('_error')}")
+            return InferredSchema(
+                schema_inferred=False,
+                document_type=document_type,
+                confidence=0.0,
+                fields=result,
+                inference_model=self.model
+            )
 
+        # Extrair meta-campos com validação
         confidence = result.pop("_confidence", 0.9)
-        explanations = result.pop("_fields_explanation", {})
+        if not isinstance(confidence, (int, float)):
+            try:
+                confidence = float(confidence)
+            except (ValueError, TypeError):
+                confidence = 0.9
 
+        explanations = result.pop("_fields_explanation", {})
+        if not isinstance(explanations, dict):
+            explanations = {}
+
+        # Remover meta-campos (incluindo _document_type que será forçado)
         for key in list(result.keys()):
             if key.startswith("_"):
                 result.pop(key)
@@ -982,33 +1022,92 @@ class SchemaInferrer:
 
     def _parse_json_response(self, text: str) -> Dict[str, Any]:
         """Extrai JSON da resposta do LLM."""
+        import re
+
+        original_text = text
         text = text.strip()
 
-        # Remover marcadores de código
-        if text.startswith("```json"):
-            text = text[7:]
-        elif text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
+        # Remover marcadores de código (várias formas)
+        # Padrão: ```json\n...\n```
+        code_block_pattern = r'```(?:json)?\s*\n?(.*?)\n?```'
+        matches = re.findall(code_block_pattern, text, re.DOTALL)
+        if matches:
+            # Usar o maior bloco encontrado (provavelmente o JSON principal)
+            text = max(matches, key=len)
+        else:
+            # Fallback: remover marcadores manualmente
+            if text.startswith("```json"):
+                text = text[7:]
+            elif text.startswith("```"):
+                text = text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
 
         text = text.strip()
 
-        # Encontrar JSON
+        # Encontrar o JSON balanceado
         start = text.find("{")
-        end = text.rfind("}") + 1
+        if start < 0:
+            return {"_error": "No JSON object found", "_raw_text": original_text[:500]}
+
+        # Encontrar o fechamento balanceado
+        brace_count = 0
+        end = -1
+        in_string = False
+        escape_next = False
+
+        for i, char in enumerate(text[start:], start):
+            if escape_next:
+                escape_next = False
+                continue
+            if char == '\\':
+                escape_next = True
+                continue
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if char == '{':
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    end = i + 1
+                    break
+
+        if end <= start:
+            # Fallback: usar rfind
+            end = text.rfind("}") + 1
 
         if start >= 0 and end > start:
+            json_str = text[start:end]
+
+            # Tentar limpar problemas comuns
+            # Remover vírgulas extras antes de }
+            json_str = re.sub(r',\s*}', '}', json_str)
+            json_str = re.sub(r',\s*]', ']', json_str)
+
             try:
-                return json.loads(text[start:end])
+                return json.loads(json_str)
             except json.JSONDecodeError as e:
                 logger.warning(f"JSON parse error: {e}")
+                logger.debug(f"Attempted to parse: {json_str[:200]}...")
+
+                # Tentar reparar JSON comum
+                try:
+                    # Substituir aspas simples por duplas em chaves
+                    fixed = re.sub(r"'([^']+)':", r'"\1":', json_str)
+                    return json.loads(fixed)
+                except json.JSONDecodeError:
+                    pass
+
                 return {
-                    "_error": f"JSON parse error: {e}",
-                    "_raw_text": text[start:end][:500]
+                    "_error": f"JSON parse error at position {e.pos}: {e.msg}",
+                    "_raw_text": json_str[:500]
                 }
 
-        return {"_error": "No JSON found", "_raw_text": text[:500]}
+        return {"_error": "No valid JSON found", "_raw_text": original_text[:500]}
 
 
 def infer_document_schema(
