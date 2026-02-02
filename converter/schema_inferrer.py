@@ -878,66 +878,99 @@ class SchemaInferrer:
         Returns:
             InferredSchema com campos dinâmicos
         """
-        # Truncar se necessário
-        text_to_analyze = document_text[:max_chars]
-        if len(document_text) > max_chars:
-            text_to_analyze += "\n\n[... documento truncado para análise ...]"
+        try:
+            # Truncar se necessário
+            text_to_analyze = document_text[:max_chars]
+            if len(document_text) > max_chars:
+                text_to_analyze += "\n\n[... documento truncado para análise ...]"
 
-        # Chamar LLM
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=4096,
-            messages=[{
-                "role": "user",
-                "content": self.inference_prompt.format(
-                    document_text=text_to_analyze
+            # Chamar LLM
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=4096,
+                messages=[{
+                    "role": "user",
+                    "content": self.inference_prompt.format(
+                        document_text=text_to_analyze
+                    )
+                }]
+            )
+
+            # Parsear resposta
+            raw_response = response.content[0].text
+            logger.debug(f"Raw LLM response (first 500 chars): {raw_response[:500]}")
+
+            result = self._parse_json_response(raw_response)
+
+            # Verificar se result é um dicionário válido
+            if not isinstance(result, dict):
+                logger.error(f"_parse_json_response returned non-dict: {type(result)}")
+                return InferredSchema(
+                    schema_inferred=False,
+                    document_type=document_type or "outro",
+                    confidence=0.0,
+                    fields={"_error": f"Invalid response type: {type(result)}"},
+                    inference_model=self.model
                 )
-            }]
-        )
 
-        # Parsear resposta
-        result = self._parse_json_response(response.content[0].text)
+            # Verificar se houve erro no parsing
+            if "_error" in result:
+                logger.warning(f"Schema inference returned error: {result.get('_error')}")
+                return InferredSchema(
+                    schema_inferred=False,
+                    document_type=document_type or "outro",
+                    confidence=0.0,
+                    fields=result,
+                    inference_model=self.model
+                )
 
-        # Verificar se houve erro no parsing
-        if "_error" in result:
-            logger.warning(f"Schema inference returned error: {result.get('_error')}")
+            # Extrair meta-campos com validação segura
+            doc_type = result.get("_document_type", document_type or "outro")
+            if "_document_type" in result:
+                del result["_document_type"]
+            if not isinstance(doc_type, str):
+                doc_type = str(doc_type) if doc_type else "outro"
+
+            confidence = result.get("_confidence", 0.8)
+            if "_confidence" in result:
+                del result["_confidence"]
+            if not isinstance(confidence, (int, float)):
+                try:
+                    confidence = float(confidence)
+                except (ValueError, TypeError):
+                    confidence = 0.8
+
+            explanations = result.get("_fields_explanation", {})
+            if "_fields_explanation" in result:
+                del result["_fields_explanation"]
+            if not isinstance(explanations, dict):
+                explanations = {}
+
+            # Remover outros meta-campos que possam ter vindo
+            keys_to_remove = [k for k in result.keys() if isinstance(k, str) and k.startswith("_")]
+            for key in keys_to_remove:
+                del result[key]
+
             return InferredSchema(
-                schema_inferred=False,
-                document_type=document_type or "outro",
-                confidence=0.0,
+                schema_inferred=True,
+                document_type=doc_type,
+                confidence=confidence,
+                fields_explanation=explanations if self.include_explanations else {},
                 fields=result,
                 inference_model=self.model
             )
 
-        # Extrair meta-campos com validação
-        doc_type = result.pop("_document_type", document_type or "outro")
-        if not isinstance(doc_type, str):
-            doc_type = str(doc_type) if doc_type else "outro"
-
-        confidence = result.pop("_confidence", 0.8)
-        if not isinstance(confidence, (int, float)):
-            try:
-                confidence = float(confidence)
-            except (ValueError, TypeError):
-                confidence = 0.8
-
-        explanations = result.pop("_fields_explanation", {})
-        if not isinstance(explanations, dict):
-            explanations = {}
-
-        # Remover outros meta-campos que possam ter vindo
-        for key in list(result.keys()):
-            if key.startswith("_"):
-                result.pop(key)
-
-        return InferredSchema(
-            schema_inferred=True,
-            document_type=doc_type,
-            confidence=confidence,
-            fields_explanation=explanations if self.include_explanations else {},
-            fields=result,
-            inference_model=self.model
-        )
+        except Exception as e:
+            import traceback
+            logger.error(f"Unexpected error in infer_schema: {type(e).__name__}: {e}")
+            logger.debug(f"Traceback: {traceback.format_exc()}")
+            return InferredSchema(
+                schema_inferred=False,
+                document_type=document_type or "outro",
+                confidence=0.0,
+                fields={"_error": f"{type(e).__name__}: {str(e)}"},
+                inference_model=self.model
+            )
 
     def infer_with_known_type(
         self,
@@ -958,67 +991,98 @@ class SchemaInferrer:
         Returns:
             InferredSchema
         """
-        # Se tiver prompt específico, usar
-        if type_specific_prompt:
-            prompt = type_specific_prompt
-        else:
-            # Usar prompt padrão com hint de tipo
-            prompt = self.inference_prompt.replace(
-                "Identificar o TIPO de documento",
-                f"O documento é do tipo '{document_type}'. Extrair campos específicos"
+        try:
+            # Se tiver prompt específico, usar
+            if type_specific_prompt:
+                prompt = type_specific_prompt
+            else:
+                # Usar prompt padrão com hint de tipo
+                prompt = self.inference_prompt.replace(
+                    "Identificar o TIPO de documento",
+                    f"O documento é do tipo '{document_type}'. Extrair campos específicos"
+                )
+
+            # Truncar documento
+            max_chars = 30000
+            text = document_text[:max_chars]
+
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=4096,
+                messages=[{
+                    "role": "user",
+                    "content": prompt.format(document_text=text)
+                }]
             )
 
-        # Truncar documento
-        max_chars = 30000
-        text = document_text[:max_chars]
+            raw_response = response.content[0].text
+            logger.debug(f"Raw LLM response (known type, first 500 chars): {raw_response[:500]}")
 
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=4096,
-            messages=[{
-                "role": "user",
-                "content": prompt.format(document_text=text)
-            }]
-        )
+            result = self._parse_json_response(raw_response)
 
-        result = self._parse_json_response(response.content[0].text)
+            # Verificar se result é um dicionário válido
+            if not isinstance(result, dict):
+                logger.error(f"_parse_json_response returned non-dict: {type(result)}")
+                return InferredSchema(
+                    schema_inferred=False,
+                    document_type=document_type,
+                    confidence=0.0,
+                    fields={"_error": f"Invalid response type: {type(result)}"},
+                    inference_model=self.model
+                )
 
-        # Verificar se houve erro no parsing
-        if "_error" in result:
-            logger.warning(f"Schema inference (known type) returned error: {result.get('_error')}")
+            # Verificar se houve erro no parsing
+            if "_error" in result:
+                logger.warning(f"Schema inference (known type) returned error: {result.get('_error')}")
+                return InferredSchema(
+                    schema_inferred=False,
+                    document_type=document_type,
+                    confidence=0.0,
+                    fields=result,
+                    inference_model=self.model
+                )
+
+            # Extrair meta-campos com validação segura
+            confidence = result.get("_confidence", 0.9)
+            if "_confidence" in result:
+                del result["_confidence"]
+            if not isinstance(confidence, (int, float)):
+                try:
+                    confidence = float(confidence)
+                except (ValueError, TypeError):
+                    confidence = 0.9
+
+            explanations = result.get("_fields_explanation", {})
+            if "_fields_explanation" in result:
+                del result["_fields_explanation"]
+            if not isinstance(explanations, dict):
+                explanations = {}
+
+            # Remover meta-campos (incluindo _document_type que será forçado)
+            keys_to_remove = [k for k in result.keys() if isinstance(k, str) and k.startswith("_")]
+            for key in keys_to_remove:
+                del result[key]
+
             return InferredSchema(
-                schema_inferred=False,
+                schema_inferred=True,
                 document_type=document_type,
-                confidence=0.0,
+                confidence=confidence,
+                fields_explanation=explanations if self.include_explanations else {},
                 fields=result,
                 inference_model=self.model
             )
 
-        # Extrair meta-campos com validação
-        confidence = result.pop("_confidence", 0.9)
-        if not isinstance(confidence, (int, float)):
-            try:
-                confidence = float(confidence)
-            except (ValueError, TypeError):
-                confidence = 0.9
-
-        explanations = result.pop("_fields_explanation", {})
-        if not isinstance(explanations, dict):
-            explanations = {}
-
-        # Remover meta-campos (incluindo _document_type que será forçado)
-        for key in list(result.keys()):
-            if key.startswith("_"):
-                result.pop(key)
-
-        return InferredSchema(
-            schema_inferred=True,
-            document_type=document_type,
-            confidence=confidence,
-            fields_explanation=explanations if self.include_explanations else {},
-            fields=result,
-            inference_model=self.model
-        )
+        except Exception as e:
+            import traceback
+            logger.error(f"Unexpected error in infer_with_known_type: {type(e).__name__}: {e}")
+            logger.debug(f"Traceback: {traceback.format_exc()}")
+            return InferredSchema(
+                schema_inferred=False,
+                document_type=document_type,
+                confidence=0.0,
+                fields={"_error": f"{type(e).__name__}: {str(e)}"},
+                inference_model=self.model
+            )
 
     def _parse_json_response(self, text: str) -> Dict[str, Any]:
         """Extrai JSON da resposta do LLM."""
