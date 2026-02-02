@@ -349,6 +349,447 @@ Documento:
 {document_text}
 
 Retorne APENAS o JSON preenchido.
+""",
+
+    "ata": """
+Extraia os seguintes campos desta ATA DE REUNIÃO:
+
+```json
+{
+  "_document_type": "ata",
+  "_confidence": 0.95,
+
+  "identificacao": {
+    "titulo": "",
+    "numero": "",
+    "data": "YYYY-MM-DD",
+    "hora_inicio": "HH:MM",
+    "hora_fim": "HH:MM",
+    "local": ""
+  },
+
+  "organizacao": {
+    "nome": "",
+    "departamento": "",
+    "tipo_reuniao": "ordinária | extraordinária | especial"
+  },
+
+  "participantes": [
+    {
+      "nome": "",
+      "cargo": "",
+      "presente": true
+    }
+  ],
+
+  "ausentes_justificados": [],
+
+  "pauta": [
+    {
+      "item": 1,
+      "assunto": "",
+      "deliberacao": ""
+    }
+  ],
+
+  "deliberacoes": [
+    {
+      "item": "",
+      "decisao": "",
+      "responsavel": "",
+      "prazo": ""
+    }
+  ],
+
+  "encaminhamentos": [
+    {
+      "acao": "",
+      "responsavel": "",
+      "prazo": ""
+    }
+  ],
+
+  "proxima_reuniao": {
+    "data": "YYYY-MM-DD",
+    "local": ""
+  },
+
+  "secretario": "",
+  "presidente": ""
+}
+```
+
+Documento:
+{document_text}
+
+Retorne APENAS o JSON preenchido.
+""",
+
+    "parecer": """
+Extraia os seguintes campos deste PARECER:
+
+```json
+{
+  "_document_type": "parecer",
+  "_confidence": 0.95,
+
+  "identificacao": {
+    "numero": "",
+    "tipo": "jurídico | técnico | contábil | outro",
+    "data_emissao": "YYYY-MM-DD"
+  },
+
+  "solicitante": {
+    "nome": "",
+    "cargo": "",
+    "orgao": ""
+  },
+
+  "assunto": "",
+
+  "ementa": "",
+
+  "relatorio": {
+    "contexto": "",
+    "fatos": [],
+    "documentos_analisados": []
+  },
+
+  "fundamentacao": {
+    "base_legal": [],
+    "jurisprudencia": [],
+    "doutrina": [],
+    "argumentos": []
+  },
+
+  "conclusao": {
+    "parecer": "favorável | desfavorável | parcialmente favorável | com ressalvas",
+    "sintese": "",
+    "recomendacoes": []
+  },
+
+  "autor": {
+    "nome": "",
+    "cargo": "",
+    "registro_profissional": ""
+  }
+}
+```
+
+Documento:
+{document_text}
+
+Retorne APENAS o JSON preenchido.
+""",
+
+    "proposta": """
+Extraia os seguintes campos desta PROPOSTA:
+
+```json
+{
+  "_document_type": "proposta",
+  "_confidence": 0.95,
+
+  "identificacao": {
+    "numero": "",
+    "tipo": "comercial | técnica | técnica e comercial",
+    "data": "YYYY-MM-DD",
+    "validade": "YYYY-MM-DD"
+  },
+
+  "proponente": {
+    "empresa": "",
+    "cnpj": "",
+    "endereco": "",
+    "contato": "",
+    "email": "",
+    "telefone": ""
+  },
+
+  "cliente": {
+    "empresa": "",
+    "cnpj": "",
+    "contato": ""
+  },
+
+  "referencia": {
+    "edital": "",
+    "processo": "",
+    "solicitacao": ""
+  },
+
+  "objeto": "",
+
+  "escopo": [
+    {
+      "item": "",
+      "descricao": "",
+      "quantidade": null,
+      "unidade": ""
+    }
+  ],
+
+  "exclusoes": [],
+
+  "valores": {
+    "total": 0.00,
+    "moeda": "BRL",
+    "forma_pagamento": "",
+    "condicoes": ""
+  },
+
+  "prazo_execucao": "",
+
+  "garantias": [],
+
+  "condicoes_gerais": [],
+
+  "anexos": []
+}
+```
+
+Documento:
+{document_text}
+
+Retorne APENAS o JSON preenchido.
+""",
+
+    "manual": """
+Extraia os seguintes campos deste MANUAL:
+
+```json
+{
+  "_document_type": "manual",
+  "_confidence": 0.95,
+
+  "identificacao": {
+    "titulo": "",
+    "versao": "",
+    "data_revisao": "YYYY-MM-DD",
+    "codigo": ""
+  },
+
+  "tipo_manual": "operação | usuário | técnico | manutenção | procedimento | outro",
+
+  "produto_sistema": {
+    "nome": "",
+    "modelo": "",
+    "fabricante": "",
+    "versao": ""
+  },
+
+  "publico_alvo": "",
+
+  "estrutura": [
+    {
+      "capitulo": "",
+      "titulo": "",
+      "pagina": null
+    }
+  ],
+
+  "requisitos": {
+    "pre_requisitos": [],
+    "equipamentos": [],
+    "qualificacoes": []
+  },
+
+  "procedimentos_principais": [
+    {
+      "nome": "",
+      "objetivo": "",
+      "etapas": []
+    }
+  ],
+
+  "avisos_seguranca": [
+    {
+      "tipo": "perigo | advertência | cuidado | nota",
+      "descricao": ""
+    }
+  ],
+
+  "especificacoes_tecnicas": {},
+
+  "manutencao": {
+    "preventiva": [],
+    "periodicidade": ""
+  },
+
+  "solucao_problemas": [
+    {
+      "problema": "",
+      "causa": "",
+      "solucao": ""
+    }
+  ],
+
+  "contato_suporte": {
+    "telefone": "",
+    "email": "",
+    "site": ""
+  },
+
+  "autor": "",
+  "aprovador": ""
+}
+```
+
+Documento:
+{document_text}
+
+Retorne APENAS o JSON preenchido.
+""",
+
+    "artigo": """
+Extraia os seguintes campos deste ARTIGO:
+
+```json
+{
+  "_document_type": "artigo",
+  "_confidence": 0.95,
+
+  "identificacao": {
+    "titulo": "",
+    "subtitulo": "",
+    "tipo": "científico | técnico | revisão | opinião",
+    "idioma": "pt"
+  },
+
+  "autores": [
+    {
+      "nome": "",
+      "afiliacao": "",
+      "email": "",
+      "orcid": ""
+    }
+  ],
+
+  "autor_correspondente": "",
+
+  "publicacao": {
+    "revista": "",
+    "volume": "",
+    "numero": "",
+    "paginas": "",
+    "ano": null,
+    "doi": "",
+    "issn": ""
+  },
+
+  "datas": {
+    "submissao": "YYYY-MM-DD",
+    "aceite": "YYYY-MM-DD",
+    "publicacao": "YYYY-MM-DD"
+  },
+
+  "resumo": "",
+  "abstract": "",
+
+  "palavras_chave": [],
+  "keywords": [],
+
+  "area_conhecimento": "",
+
+  "estrutura": {
+    "introducao": "",
+    "metodologia": "",
+    "resultados": "",
+    "discussao": "",
+    "conclusao": ""
+  },
+
+  "referencias_count": null,
+  "tabelas_count": null,
+  "figuras_count": null,
+
+  "financiamento": [],
+  "conflito_interesses": "",
+  "agradecimentos": ""
+}
+```
+
+Documento:
+{document_text}
+
+Retorne APENAS o JSON preenchido.
+""",
+
+    "norma": """
+Extraia os seguintes campos desta NORMA/REGULAMENTO:
+
+```json
+{
+  "_document_type": "norma",
+  "_confidence": 0.95,
+
+  "identificacao": {
+    "codigo": "",
+    "titulo": "",
+    "tipo": "norma técnica | regulamento | política | procedimento | instrução",
+    "versao": "",
+    "data_vigencia": "YYYY-MM-DD"
+  },
+
+  "orgao_emissor": {
+    "nome": "",
+    "tipo": "ABNT | ISO | interno | governo | outro",
+    "pais": ""
+  },
+
+  "escopo": "",
+
+  "aplicabilidade": {
+    "obrigatoria": true,
+    "setores": [],
+    "excecoes": []
+  },
+
+  "referencias_normativas": [],
+
+  "definicoes": [
+    {
+      "termo": "",
+      "definicao": ""
+    }
+  ],
+
+  "requisitos": [
+    {
+      "numero": "",
+      "titulo": "",
+      "descricao": "",
+      "tipo": "mandatório | recomendado | informativo"
+    }
+  ],
+
+  "conformidade": {
+    "certificacao": "",
+    "auditoria": "",
+    "penalidades": []
+  },
+
+  "historico_revisoes": [
+    {
+      "versao": "",
+      "data": "YYYY-MM-DD",
+      "alteracoes": ""
+    }
+  ],
+
+  "anexos": [],
+
+  "aprovacao": {
+    "responsavel": "",
+    "data": "YYYY-MM-DD"
+  }
+}
+```
+
+Documento:
+{document_text}
+
+Retorne APENAS o JSON preenchido.
 """
 }
 
