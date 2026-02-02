@@ -412,12 +412,31 @@ class SchemaInferrer:
     ) -> Dict[str, Any]:
         """Valida e completa o schema com valores padrão."""
 
+        # Limpar chaves malformadas (com newlines ou caracteres inválidos)
+        clean_result = {}
+        for key, value in list(result.items()):
+            if isinstance(key, str):
+                # Limpar key de caracteres problemáticos
+                clean_key = key.strip().strip('"').strip("'")
+                # Ignorar chaves que começam com newline ou são vazias
+                if clean_key and not clean_key.startswith('\n') and not clean_key.startswith('\\n'):
+                    clean_result[clean_key] = value
+            else:
+                clean_result[key] = value
+
+        result = clean_result
+
         # Garantir estrutura metadata
         if "metadata" not in result:
             result["metadata"] = {}
 
+        # Garantir que metadata é um dicionário
+        if not isinstance(result["metadata"], dict):
+            logger.warning(f"metadata is not a dict: {type(result['metadata'])}")
+            result["metadata"] = {}
+
         metadata = result["metadata"]
-        if "id" not in metadata or not metadata["id"]:
+        if "id" not in metadata or not metadata.get("id"):
             metadata["id"] = f"doc-{uuid.uuid4().hex[:8]}"
         if "analysisDate" not in metadata:
             metadata["analysisDate"] = date.today().isoformat()
@@ -438,50 +457,50 @@ class SchemaInferrer:
             }]
 
         # Garantir estrutura entities
-        if "entities" not in result:
+        if "entities" not in result or not isinstance(result.get("entities"), dict):
             result["entities"] = {}
 
         entities = result["entities"]
         for key in ["actors", "documents", "assets", "events", "relationships"]:
-            if key not in entities:
+            if key not in entities or not isinstance(entities.get(key), list):
                 entities[key] = []
 
         # Garantir estrutura evidence
-        if "evidence" not in result:
+        if "evidence" not in result or not isinstance(result.get("evidence"), dict):
             result["evidence"] = {}
 
         evidence = result["evidence"]
         for key in ["documentary", "testimonial", "technical", "digital"]:
-            if key not in evidence:
+            if key not in evidence or not isinstance(evidence.get(key), list):
                 evidence[key] = []
 
         # Garantir estrutura analysis
-        if "analysis" not in result:
+        if "analysis" not in result or not isinstance(result.get("analysis"), dict):
             result["analysis"] = {}
 
         analysis = result["analysis"]
         for key in ["findings", "issues", "recommendations"]:
-            if key not in analysis:
+            if key not in analysis or not isinstance(analysis.get(key), list):
                 analysis[key] = []
 
         # Garantir timeline
-        if "timeline" not in result:
+        if "timeline" not in result or not isinstance(result.get("timeline"), list):
             result["timeline"] = []
 
         # Garantir synthesis
-        if "synthesis" not in result:
+        if "synthesis" not in result or not isinstance(result.get("synthesis"), dict):
             result["synthesis"] = {}
 
         synthesis = result["synthesis"]
-        if "executiveSummary" not in synthesis:
+        if "executiveSummary" not in synthesis or not isinstance(synthesis.get("executiveSummary"), str):
             synthesis["executiveSummary"] = ""
-        if "keyPoints" not in synthesis:
+        if "keyPoints" not in synthesis or not isinstance(synthesis.get("keyPoints"), list):
             synthesis["keyPoints"] = []
-        if "conclusions" not in synthesis:
+        if "conclusions" not in synthesis or not isinstance(synthesis.get("conclusions"), list):
             synthesis["conclusions"] = []
-        if "openQuestions" not in synthesis:
+        if "openQuestions" not in synthesis or not isinstance(synthesis.get("openQuestions"), list):
             synthesis["openQuestions"] = []
-        if "nextSteps" not in synthesis:
+        if "nextSteps" not in synthesis or not isinstance(synthesis.get("nextSteps"), list):
             synthesis["nextSteps"] = []
 
         return result
@@ -559,31 +578,66 @@ class SchemaInferrer:
 
         return round(confidence, 2)
 
+    def _clean_dict_keys(self, obj: Any) -> Any:
+        """Limpa recursivamente chaves de dicionários."""
+        if isinstance(obj, dict):
+            clean_dict = {}
+            for key, value in obj.items():
+                if isinstance(key, str):
+                    # Limpar key de caracteres problemáticos
+                    clean_key = key.strip()
+                    # Remover aspas extras no início/fim
+                    if clean_key.startswith('"') and clean_key.endswith('"'):
+                        clean_key = clean_key[1:-1]
+                    # Ignorar chaves malformadas
+                    if clean_key and '\n' not in clean_key and '\r' not in clean_key:
+                        clean_dict[clean_key] = self._clean_dict_keys(value)
+                else:
+                    clean_dict[key] = self._clean_dict_keys(value)
+            return clean_dict
+        elif isinstance(obj, list):
+            return [self._clean_dict_keys(item) for item in obj]
+        else:
+            return obj
+
     def _parse_json_response(self, text: str) -> Dict[str, Any]:
         """Extrai JSON da resposta do LLM."""
         original_text = text
         text = text.strip()
 
+        # Log para debug
+        logger.debug(f"Parsing response of length {len(text)}")
+
         # Remover marcadores de código (várias formas)
-        code_block_pattern = r'```(?:json)?\s*\n?(.*?)\n?```'
-        matches = re.findall(code_block_pattern, text, re.DOTALL)
+        # Usar regex mais robusto
+        code_block_pattern = r'```(?:json)?\s*\n([\s\S]*?)\n```'
+        matches = re.findall(code_block_pattern, text)
         if matches:
             # Usar o maior bloco encontrado
             text = max(matches, key=len)
+            logger.debug(f"Found code block, extracted {len(text)} chars")
         else:
-            # Fallback: remover marcadores manualmente
-            if text.startswith("```json"):
-                text = text[7:]
-            elif text.startswith("```"):
-                text = text[3:]
-            if text.endswith("```"):
-                text = text[:-3]
+            # Tentar outro padrão
+            code_block_pattern2 = r'```(?:json)?(.*?)```'
+            matches2 = re.findall(code_block_pattern2, text, re.DOTALL)
+            if matches2:
+                text = max(matches2, key=len)
+                logger.debug(f"Found code block (pattern 2), extracted {len(text)} chars")
+            else:
+                # Fallback: remover marcadores manualmente
+                if text.startswith("```json"):
+                    text = text[7:]
+                elif text.startswith("```"):
+                    text = text[3:]
+                if text.endswith("```"):
+                    text = text[:-3]
 
         text = text.strip()
 
         # Encontrar o JSON balanceado
         start = text.find("{")
         if start < 0:
+            logger.warning("No JSON object found in response")
             return {"_error": "No JSON object found", "_raw_text": original_text[:500]}
 
         # Encontrar o fechamento balanceado
@@ -614,16 +668,22 @@ class SchemaInferrer:
 
         if end <= start:
             end = text.rfind("}") + 1
+            logger.debug(f"Using rfind fallback, end={end}")
 
         if start >= 0 and end > start:
             json_str = text[start:end]
+            logger.debug(f"Extracted JSON string of length {len(json_str)}")
 
             # Limpar problemas comuns
             json_str = re.sub(r',\s*}', '}', json_str)
             json_str = re.sub(r',\s*]', ']', json_str)
 
             try:
-                return json.loads(json_str)
+                result = json.loads(json_str)
+                # Limpar chaves recursivamente
+                result = self._clean_dict_keys(result)
+                logger.debug(f"Successfully parsed JSON with keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
+                return result
             except json.JSONDecodeError as e:
                 logger.warning(f"JSON parse error: {e}")
                 logger.debug(f"Attempted to parse: {json_str[:300]}...")
@@ -631,7 +691,9 @@ class SchemaInferrer:
                 # Tentar reparar JSON
                 try:
                     fixed = re.sub(r"'([^']+)':", r'"\1":', json_str)
-                    return json.loads(fixed)
+                    result = json.loads(fixed)
+                    result = self._clean_dict_keys(result)
+                    return result
                 except json.JSONDecodeError:
                     pass
 
@@ -640,6 +702,7 @@ class SchemaInferrer:
                     "_raw_text": json_str[:500]
                 }
 
+        logger.warning("No valid JSON structure found")
         return {"_error": "No valid JSON found", "_raw_text": original_text[:500]}
 
     # Manter métodos legados para compatibilidade
