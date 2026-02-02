@@ -75,22 +75,45 @@ class InferredSchema:
     """
     Schema inferido dinamicamente pelo LLM.
 
-    Esta é a representação da "camada dinâmica" do JSON.
-    A estrutura interna (fields) varia por tipo de documento.
+    Schema v1.0: Campos específicos por tipo de documento
+    Schema v2.0: Schema de Análise Documental Estruturada com:
+      - metadata: Metadados do documento
+      - entities: Atores, documentos, ativos, eventos, relacionamentos
+      - evidence: Elementos probatórios
+      - analysis: Achados, problemas, recomendações
+      - timeline: Cronologia consolidada
+      - synthesis: Síntese conclusiva
     """
     # Meta-campos (sempre presentes)
     schema_inferred: bool = True
     document_type: str = "unknown"
-    schema_version: str = "1.0"
+    schema_version: str = "2.0"
     inference_model: str = "claude-sonnet-4-5-20250929"
     confidence: float = 0.0
     fields_explanation: Dict[str, str] = field(default_factory=dict)
 
-    # Campos dinâmicos (variam por documento)
+    # Campos dinâmicos (estrutura varia por versão do schema)
     fields: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Converte para dicionário para serialização JSON."""
+        # Para schema v2.0, os fields contêm a estrutura completa
+        if self.schema_version == "2.0" and self.fields:
+            # Retornar estrutura completa do schema v2
+            result = dict(self.fields)
+
+            # Adicionar meta-informações de processamento
+            if "_processing" not in result:
+                result["_processing"] = {}
+
+            result["_processing"]["schema_version"] = self.schema_version
+            result["_processing"]["inference_model"] = self.inference_model
+            result["_processing"]["confidence"] = self.confidence
+            result["_processing"]["schema_inferred"] = self.schema_inferred
+
+            return result
+
+        # Schema v1.0 (legado)
         result = {
             "_schema_inferred": self.schema_inferred,
             "_document_type": self.document_type,
@@ -106,6 +129,46 @@ class InferredSchema:
         result.update(self.fields)
 
         return result
+
+    def get_metadata(self) -> Dict[str, Any]:
+        """Retorna metadados do documento (schema v2)."""
+        return self.fields.get("metadata", {})
+
+    def get_entities(self) -> Dict[str, Any]:
+        """Retorna entidades extraídas (schema v2)."""
+        return self.fields.get("entities", {})
+
+    def get_actors(self) -> List[Dict[str, Any]]:
+        """Retorna lista de atores (schema v2)."""
+        return self.fields.get("entities", {}).get("actors", [])
+
+    def get_events(self) -> List[Dict[str, Any]]:
+        """Retorna lista de eventos (schema v2)."""
+        return self.fields.get("entities", {}).get("events", [])
+
+    def get_relationships(self) -> List[Dict[str, Any]]:
+        """Retorna lista de relacionamentos (schema v2)."""
+        return self.fields.get("entities", {}).get("relationships", [])
+
+    def get_findings(self) -> List[Dict[str, Any]]:
+        """Retorna achados analíticos (schema v2)."""
+        return self.fields.get("analysis", {}).get("findings", [])
+
+    def get_recommendations(self) -> List[Dict[str, Any]]:
+        """Retorna recomendações (schema v2)."""
+        return self.fields.get("analysis", {}).get("recommendations", [])
+
+    def get_synthesis(self) -> Dict[str, Any]:
+        """Retorna síntese (schema v2)."""
+        return self.fields.get("synthesis", {})
+
+    def get_executive_summary(self) -> str:
+        """Retorna resumo executivo (schema v2)."""
+        return self.fields.get("synthesis", {}).get("executiveSummary", "")
+
+    def get_timeline(self) -> List[Dict[str, Any]]:
+        """Retorna timeline (schema v2)."""
+        return self.fields.get("timeline", [])
 
 
 # === ESTRUTURAS BÁSICAS ===
