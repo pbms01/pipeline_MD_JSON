@@ -299,7 +299,11 @@ class SchemaInferrer:
         if not HAS_ANTHROPIC:
             raise ImportError("anthropic é necessário para inferência de schema")
 
-        self.client = anthropic.Anthropic()
+        # Passar API key explicitamente
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY not found in environment variables")
+        self.client = anthropic.Anthropic(api_key=api_key)
         self.model = model
         self.include_explanations = include_explanations
         self._load_prompts()

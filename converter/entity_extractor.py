@@ -119,7 +119,9 @@ class EntityExtractor:
     def __init__(self, model: str = CLAUDE_MODEL):
         self.model = model
         if HAS_ANTHROPIC:
-            self.client = anthropic.Anthropic()
+            # Passar API key explicitamente
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+            self.client = anthropic.Anthropic(api_key=api_key) if api_key else None
         else:
             self.client = None
 
