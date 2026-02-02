@@ -773,55 +773,16 @@ class SchemaInferrer:
                 return result
             except json.JSONDecodeError as e:
                 logger.warning(f"JSON parse error at position {e.pos}: {e.msg}")
+                logger.info(f"[TRACE] Attempting JSON recovery strategies...")
 
-                # Estratégia 1: Tentar truncar no último } válido antes do erro
-                if e.pos > 100:
-                    truncated = json_str[:e.pos]
-                    # Encontrar o último } que fecha um objeto válido
-                    last_brace = truncated.rfind("}")
-                    if last_brace > 0:
-                        # Tentar parsear até esse ponto
-                        for end_pos in range(last_brace, max(last_brace - 500, 0), -1):
-                            try:
-                                candidate = json_str[:end_pos + 1]
-                                # Balancear chaves
-                                open_count = candidate.count("{") - candidate.count("}")
-                                if open_count > 0:
-                                    candidate += "}" * open_count
-                                parsed = json.loads(candidate)
-                                logger.info(f"[TRACE] Recovered JSON by truncating at position {end_pos}")
-                                return self._create_safe_dict(parsed)
-                            except json.JSONDecodeError:
-                                continue
+                # Estratégia 1: Truncar progressivamente até encontrar JSON válido
+                recovered = self._try_recover_json(json_str, e.pos)
+                if recovered:
+                    logger.info(f"[TRACE] JSON recovery succeeded!")
+                    return recovered
 
-                # Estratégia 2: Tentar reparar aspas simples
-                try:
-                    fixed = re.sub(r"'([^']+)':", r'"\1":', json_str)
-                    parsed = json.loads(fixed)
-                    return self._create_safe_dict(parsed)
-                except json.JSONDecodeError:
-                    pass
-
-                # Estratégia 3: Tentar remover a última parte problemática
-                try:
-                    # Remover tudo após o último objeto/array completo
-                    lines = json_str.split('\n')
-                    for i in range(len(lines) - 1, 0, -1):
-                        partial = '\n'.join(lines[:i])
-                        # Balancear chaves
-                        open_braces = partial.count("{") - partial.count("}")
-                        open_brackets = partial.count("[") - partial.count("]")
-                        if open_braces >= 0 and open_brackets >= 0:
-                            partial += "]" * open_brackets + "}" * open_braces
-                            try:
-                                parsed = json.loads(partial)
-                                logger.info(f"[TRACE] Recovered JSON by removing last {len(lines) - i} lines")
-                                return self._create_safe_dict(parsed)
-                            except json.JSONDecodeError:
-                                continue
-                except Exception as recovery_err:
-                    logger.debug(f"Recovery strategy 3 failed: {recovery_err}")
-
+                # Se nenhuma estratégia funcionou
+                logger.warning(f"[TRACE] All JSON recovery strategies failed")
                 return self._create_safe_dict({
                     "_error": f"JSON parse error at position {e.pos}: {e.msg}",
                     "_raw_text": json_str[:500]
@@ -829,6 +790,90 @@ class SchemaInferrer:
 
         logger.warning("No valid JSON structure found")
         return self._create_safe_dict({"_error": "No valid JSON found", "_raw_text": original_text[:500]})
+
+    def _try_recover_json(self, json_str: str, error_pos: int) -> Optional[Dict[str, Any]]:
+        """Tenta recuperar um JSON válido de uma string com erros."""
+
+        # Estratégia 1: Truncar antes do erro e fechar estruturas
+        logger.debug(f"[RECOVERY] Strategy 1: Truncating before error position {error_pos}")
+        for pos in range(error_pos, max(error_pos - 2000, 100), -10):
+            candidate = json_str[:pos]
+
+            # Encontrar última estrutura completa
+            # Procurar por padrões como: }, ou ], ou "value"
+            last_complete = -1
+            for pattern_pos in range(len(candidate) - 1, max(0, len(candidate) - 500), -1):
+                char = candidate[pattern_pos]
+                if char in '},]':
+                    last_complete = pattern_pos
+                    break
+
+            if last_complete > 0:
+                truncated = candidate[:last_complete + 1]
+
+                # Contar chaves e colchetes abertos
+                open_braces = truncated.count('{') - truncated.count('}')
+                open_brackets = truncated.count('[') - truncated.count(']')
+
+                # Fechar estruturas abertas
+                if open_braces >= 0 and open_brackets >= 0:
+                    truncated += ']' * open_brackets + '}' * open_braces
+
+                    try:
+                        parsed = json.loads(truncated)
+                        logger.info(f"[RECOVERY] Success at position {last_complete}")
+                        return self._create_safe_dict(parsed)
+                    except json.JSONDecodeError:
+                        continue
+
+        # Estratégia 2: Buscar seções principais e reconstruir
+        logger.debug("[RECOVERY] Strategy 2: Extracting main sections")
+        sections = {}
+        section_patterns = [
+            (r'"metadata"\s*:\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', "metadata"),
+            (r'"entities"\s*:\s*\{[^{}]*(?:\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}[^{}]*)*\}', "entities"),
+            (r'"analysis"\s*:\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', "analysis"),
+            (r'"synthesis"\s*:\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', "synthesis"),
+        ]
+
+        for pattern, name in section_patterns:
+            try:
+                match = re.search(pattern, json_str, re.DOTALL)
+                if match:
+                    section_json = '{' + match.group(0) + '}'
+                    try:
+                        parsed_section = json.loads(section_json)
+                        sections[name] = parsed_section.get(name, {})
+                    except json.JSONDecodeError:
+                        pass
+            except Exception:
+                pass
+
+        if sections:
+            logger.info(f"[RECOVERY] Extracted {len(sections)} sections: {list(sections.keys())}")
+            return self._create_safe_dict(sections)
+
+        # Estratégia 3: Remover linhas do final progressivamente
+        logger.debug("[RECOVERY] Strategy 3: Removing lines from end")
+        lines = json_str.split('\n')
+        for remove_count in range(1, min(100, len(lines) // 2)):
+            partial = '\n'.join(lines[:-remove_count])
+
+            # Fechar estruturas
+            open_braces = partial.count('{') - partial.count('}')
+            open_brackets = partial.count('[') - partial.count(']')
+
+            if open_braces >= 0 and open_brackets >= 0:
+                partial += ']' * open_brackets + '}' * open_braces
+
+                try:
+                    parsed = json.loads(partial)
+                    logger.info(f"[RECOVERY] Success by removing {remove_count} lines")
+                    return self._create_safe_dict(parsed)
+                except json.JSONDecodeError:
+                    continue
+
+        return None
 
     def _create_safe_dict(self, obj: Any) -> Any:
         """Cria uma estrutura de dados completamente nova e segura."""
