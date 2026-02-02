@@ -63,230 +63,59 @@ logger = logging.getLogger(__name__)
 
 # === STRUCTURED ANALYSIS PROMPT ===
 
-STRUCTURED_ANALYSIS_PROMPT = """Você é um especialista em análise documental estruturada. Analise o documento fornecido e extraia informações seguindo rigorosamente o schema JSON abaixo.
+STRUCTURED_ANALYSIS_PROMPT = """Analise o documento e extraia informações estruturadas em JSON.
 
-## Estrutura de Saída Obrigatória
+IMPORTANTE: Seja CONCISO. Máximo 5 itens por array. Omita campos sem dados.
+
+## Schema JSON (preencha apenas campos relevantes):
 
 ```json
 {
   "metadata": {
-    "id": "doc-[uuid-curto]",
-    "title": "string - título descritivo",
-    "documentType": "string - tipo (ver lista abaixo)",
-    "analysisDate": "YYYY-MM-DD",
-    "version": 1,
-    "status": "draft",
-    "confidentiality": "internal",
-    "tags": ["string"],
-    "notes": "string | null"
+    "id": "doc-[uuid-8chars]",
+    "title": "título descritivo curto",
+    "documentType": "tipo do documento",
+    "date": "YYYY-MM-DD ou null",
+    "parties": ["partes principais envolvidas"],
+    "summary": "resumo em 1-2 frases"
   },
-  "entities": {
-    "actors": [
-      {
-        "id": "actor-[nome-slug]",
-        "type": "person | organization | government_body",
-        "name": "string - nome completo",
-        "shortName": "string | null",
-        "identifiers": {
-          "cpf": "string | null",
-          "cnpj": "string | null",
-          "rg": "string | null",
-          "oab": "string | null"
-        },
-        "role": "string - função/cargo",
-        "category": "string - categoria funcional",
-        "contact": {
-          "email": "string | null",
-          "phone": "string | null",
-          "address": "string | null"
-        },
-        "notes": "string | null"
-      }
-    ],
-    "documents": [
-      {
-        "id": "doc-[tipo]-[ref]",
-        "name": "string - título do documento",
-        "type": "string - tipo documental",
-        "reference": "string | null - número/protocolo",
-        "date": "YYYY-MM-DD | null",
-        "author": "actor-id | null",
-        "summary": "string | null",
-        "relatedActors": ["actor-id"],
-        "tags": ["string"]
-      }
-    ],
-    "assets": [
-      {
-        "id": "asset-[tipo]-[seq]",
-        "type": "string - tipo do ativo",
-        "description": "string",
-        "value": {
-          "amount": "number | null",
-          "currency": "BRL | USD | null",
-          "valuationType": "mercado | contabil | declarado | null"
-        },
-        "ownership": {
-          "owner": "actor-id | null"
-        },
-        "location": "string | null",
-        "status": "string | null"
-      }
-    ],
-    "events": [
-      {
-        "id": "event-[YYYY-MM-DD]-[desc]",
-        "date": "YYYY-MM-DD",
-        "time": "HH:MM | null",
-        "type": "string - tipo do evento",
-        "description": "string",
-        "location": "string | null",
-        "involvedActors": ["actor-id"],
-        "involvedAssets": ["asset-id"],
-        "outcome": "string | null"
-      }
-    ],
-    "relationships": [
-      {
-        "id": "rel-[source]-[target]",
-        "type": "string - tipo de relacionamento",
-        "sourceId": "string - ID origem",
-        "sourceType": "actor | document | asset | event",
-        "targetId": "string - ID destino",
-        "targetType": "actor | document | asset | event",
-        "strength": "confirmed | probable | possible | alleged",
-        "evidence": ["string - descrição da evidência"]
-      }
-    ]
-  },
-  "evidence": {
-    "documentary": [
-      {
-        "id": "evid-doc-[seq]",
-        "type": "string",
-        "description": "string",
-        "sourceDocument": "doc-id | null",
-        "pageReference": "string | null",
-        "relevance": "high | medium | low",
-        "supportsClaims": ["finding-id"]
-      }
-    ],
-    "testimonial": [],
-    "technical": [],
-    "digital": []
-  },
-  "analysis": {
-    "findings": [
-      {
-        "id": "finding-[desc]",
-        "category": "fato_confirmado | fato_provavel | irregularidade | conformidade | ...",
-        "title": "string - título conciso",
-        "description": "string - descrição detalhada",
-        "significance": "string - relevância/impacto",
-        "confidence": "high | medium | low",
-        "supportingEvidence": ["evid-id"],
-        "relatedEntities": ["entity-id"]
-      }
-    ],
-    "issues": [
-      {
-        "id": "issue-[desc]",
-        "category": "documento_ausente | informacao_conflitante | ...",
-        "description": "string",
-        "severity": "critical | major | moderate | minor",
-        "status": "open | resolved"
-      }
-    ],
-    "recommendations": [
-      {
-        "id": "rec-[desc]",
-        "type": "diligencia | requisicao | monitoramento | ...",
-        "title": "string",
-        "description": "string",
-        "priority": "critical | high | medium | low",
-        "relatedFindings": ["finding-id"]
-      }
-    ]
-  },
-  "timeline": [
-    {
-      "date": "YYYY-MM-DD",
-      "entries": [
-        {
-          "id": "tl-[YYYY-MM-DD]-[seq]",
-          "time": "HH:MM | null",
-          "type": "string",
-          "description": "string",
-          "actors": ["actor-id"],
-          "significance": "high | medium | low"
-        }
-      ]
-    }
+  "actors": [
+    {"name": "nome", "role": "papel/função", "type": "person|org|gov"}
   ],
-  "synthesis": {
-    "executiveSummary": "string - resumo executivo em 2-3 parágrafos",
-    "keyPoints": [
-      {
-        "point": "string - ponto principal",
-        "supportingFindings": ["finding-id"]
-      }
-    ],
-    "conclusions": [
-      {
-        "id": "conclusion-[seq]",
-        "statement": "string - afirmação conclusiva",
-        "confidence": "high | medium | low",
-        "caveats": ["string - ressalvas"]
-      }
-    ],
-    "openQuestions": [
-      {
-        "question": "string - questão pendente",
-        "relevance": "string - por que importa"
-      }
-    ],
-    "nextSteps": [
-      {
-        "step": "string - próximo passo",
-        "priority": "critical | high | medium | low"
-      }
-    ]
-  }
+  "keyDates": [
+    {"date": "YYYY-MM-DD", "event": "descrição curta"}
+  ],
+  "keyFacts": [
+    {"fact": "fato relevante", "source": "onde no documento"}
+  ],
+  "values": [
+    {"amount": 0, "currency": "BRL", "context": "contexto"}
+  ],
+  "issues": [
+    {"issue": "problema/irregularidade identificada", "severity": "high|medium|low"}
+  ],
+  "conclusions": [
+    {"conclusion": "conclusão principal", "confidence": "high|medium|low"}
+  ],
+  "recommendations": [
+    {"action": "ação recomendada", "priority": "high|medium|low"}
+  ]
 }
 ```
 
-## Tipos de Documento (documentType)
-- Jurídico: processo_judicial, processo_administrativo, inquerito, denuncia, sentenca, acordao, parecer, contrato, procuracao
-- Corporativo: relatorio_financeiro, auditoria, compliance, ata_reuniao, estatuto_social, balanco
-- Técnico: laudo_pericial, relatorio_tecnico, parecer_tecnico, vistoria, avaliacao
-- Administrativo: edital, licitacao, convenio, termo_referencia, prestacao_contas
-- Acadêmico: artigo, tese, relatorio_pesquisa
-- Genérico: documento_geral, correspondencia, memorial, proposta
+## Tipos de Documento
+processo_judicial, contrato, laudo_tecnico, relatorio, ata_reuniao, parecer, proposta, edital, outro
 
-## Categorias de Atores
-- Público: servidor_publico, magistrado, promotor, procurador, delegado, policial, gestor_publico
-- Privado: empresario, executivo, socio, funcionario, advogado, contador, auditor
-- Outros: particular, testemunha, vitima, beneficiario, representante
-
-## Tipos de Relacionamento
-- Pessoais: emprego, sociedade, representacao, subordinacao, parentesco
-- Negociais: contratual, fornecimento, cliente, parceria
-- Financeiros: pagamento, recebimento, emprestimo, investimento
-- Propriedade: propriedade, posse, uso, custodia
-
-## Regras de Preenchimento
-1. IDs únicos com prefixos semânticos (actor-, doc-, event-, finding-, etc.)
-2. Datas sempre em YYYY-MM-DD
-3. Use null para campos não encontrados
-4. Confidence: high=evidência direta, medium=indícios, low=hipótese
-5. Timeline DEVE conter todos os eventos em ordem cronológica
-6. Synthesis SEMPRE com executiveSummary e pelo menos uma conclusion
+## Regras
+1. MÁXIMO 5 itens por array
+2. Omita seções sem dados (use arrays vazios [])
+3. Foque nos elementos MAIS IMPORTANTES
+4. Texto conciso e direto
+5. Retorne APENAS JSON válido, sem explicações
 
 ## Documento para Análise
 
 {document_text}
-
-Retorne APENAS o JSON válido, sem explicações adicionais.
 """
 
 
@@ -478,32 +307,13 @@ class SchemaInferrer:
         # Criar estrutura limpa do zero e copiar dados válidos
         clean_schema = {
             "metadata": {},
-            "entities": {
-                "actors": [],
-                "documents": [],
-                "assets": [],
-                "events": [],
-                "relationships": []
-            },
-            "evidence": {
-                "documentary": [],
-                "testimonial": [],
-                "technical": [],
-                "digital": []
-            },
-            "analysis": {
-                "findings": [],
-                "issues": [],
-                "recommendations": []
-            },
-            "timeline": [],
-            "synthesis": {
-                "executiveSummary": "",
-                "keyPoints": [],
-                "conclusions": [],
-                "openQuestions": [],
-                "nextSteps": []
-            }
+            "actors": [],
+            "keyDates": [],
+            "keyFacts": [],
+            "values": [],
+            "issues": [],
+            "conclusions": [],
+            "recommendations": []
         }
 
         # Função auxiliar para obter valor de forma segura
@@ -540,51 +350,16 @@ class SchemaInferrer:
         # Copiar metadata
         src_metadata = safe_get(result, "metadata", {})
         if isinstance(src_metadata, dict):
-            for field in ["id", "title", "documentType", "analysisDate", "version",
-                          "status", "confidentiality", "tags", "notes", "sourceFiles"]:
+            for field in ["id", "title", "documentType", "date", "parties", "summary"]:
                 val = safe_get(src_metadata, field)
                 if val is not None:
                     clean_schema["metadata"][field] = val
 
-        # Copiar entities
-        src_entities = safe_get(result, "entities", {})
-        if isinstance(src_entities, dict):
-            for entity_type in ["actors", "documents", "assets", "events", "relationships"]:
-                val = safe_get(src_entities, entity_type, [])
-                if isinstance(val, list):
-                    clean_schema["entities"][entity_type] = val
-
-        # Copiar evidence
-        src_evidence = safe_get(result, "evidence", {})
-        if isinstance(src_evidence, dict):
-            for ev_type in ["documentary", "testimonial", "technical", "digital"]:
-                val = safe_get(src_evidence, ev_type, [])
-                if isinstance(val, list):
-                    clean_schema["evidence"][ev_type] = val
-
-        # Copiar analysis
-        src_analysis = safe_get(result, "analysis", {})
-        if isinstance(src_analysis, dict):
-            for an_type in ["findings", "issues", "recommendations"]:
-                val = safe_get(src_analysis, an_type, [])
-                if isinstance(val, list):
-                    clean_schema["analysis"][an_type] = val
-
-        # Copiar timeline
-        src_timeline = safe_get(result, "timeline", [])
-        if isinstance(src_timeline, list):
-            clean_schema["timeline"] = src_timeline
-
-        # Copiar synthesis
-        src_synthesis = safe_get(result, "synthesis", {})
-        if isinstance(src_synthesis, dict):
-            val = safe_get(src_synthesis, "executiveSummary", "")
-            if isinstance(val, str):
-                clean_schema["synthesis"]["executiveSummary"] = val
-            for field in ["keyPoints", "conclusions", "openQuestions", "nextSteps"]:
-                val = safe_get(src_synthesis, field, [])
-                if isinstance(val, list):
-                    clean_schema["synthesis"][field] = val
+        # Copiar arrays do novo schema simplificado
+        for array_field in ["actors", "keyDates", "keyFacts", "values", "issues", "conclusions", "recommendations"]:
+            val = safe_get(result, array_field, [])
+            if isinstance(val, list):
+                clean_schema[array_field] = val[:5]  # Limitar a 5 itens
 
         # Usar resultado limpo
         result = clean_schema
@@ -593,23 +368,12 @@ class SchemaInferrer:
         metadata = result["metadata"]
         if not metadata.get("id"):
             metadata["id"] = f"doc-{uuid.uuid4().hex[:8]}"
-        if not metadata.get("analysisDate"):
-            metadata["analysisDate"] = date.today().isoformat()
-        if "version" not in metadata:
-            metadata["version"] = 1
-        if not metadata.get("status"):
-            metadata["status"] = "draft"
-        if not metadata.get("confidentiality"):
-            metadata["confidentiality"] = "internal"
-        if "tags" not in metadata:
-            metadata["tags"] = []
+        if not metadata.get("date"):
+            metadata["date"] = date.today().isoformat()
 
-        # Adicionar sourceFiles se fornecido
-        if source_filename and "sourceFiles" not in metadata:
-            metadata["sourceFiles"] = [{
-                "filename": source_filename,
-                "format": Path(source_filename).suffix.lstrip(".") if source_filename else "unknown"
-            }]
+        # Adicionar source se fornecido
+        if source_filename:
+            metadata["source"] = source_filename
 
         return result
 
@@ -637,72 +401,48 @@ class SchemaInferrer:
 
     def _calculate_confidence(self, result: Dict[str, Any]) -> float:
         """Calcula confiança baseado na completude do schema."""
-        score = 0.0
-        max_score = 0.0
-
         if not isinstance(result, dict):
             return 0.3
 
+        score = 0.0
+        max_score = 5.0  # 5 categorias possíveis
+
         try:
-            # Metadata (peso 0.1)
-            max_score += 0.1
-            meta = result.get("metadata")
-            if isinstance(meta, dict):
-                if meta.get("title") and meta.get("documentType"):
-                    score += 0.1
-                elif meta.get("title") or meta.get("documentType"):
-                    score += 0.05
+            # Metadata (tem título e tipo?)
+            meta = result.get("metadata", {})
+            if meta.get("title") and meta.get("documentType"):
+                score += 1.0
+            elif meta.get("title") or meta.get("documentType"):
+                score += 0.5
 
-            # Entities (peso 0.3)
-            max_score += 0.3
-            entities = result.get("entities")
-            if isinstance(entities, dict):
-                # Actors
-                actors = entities.get("actors")
-                if isinstance(actors, list) and len(actors) > 0:
-                    score += 0.1
-                # Events
-                events = entities.get("events")
-                if isinstance(events, list) and len(events) > 0:
-                    score += 0.1
-                # Relationships
-                rels = entities.get("relationships")
-                if isinstance(rels, list) and len(rels) > 0:
-                    score += 0.1
+            # Actors
+            actors = result.get("actors", [])
+            if isinstance(actors, list) and len(actors) > 0:
+                score += 1.0
 
-            # Analysis (peso 0.3)
-            max_score += 0.3
-            analysis = result.get("analysis")
-            if isinstance(analysis, dict):
-                findings = analysis.get("findings")
-                if isinstance(findings, list) and len(findings) > 0:
-                    score += 0.15
-                recs = analysis.get("recommendations")
-                if isinstance(recs, list) and len(recs) > 0:
-                    score += 0.15
+            # Key Facts
+            facts = result.get("keyFacts", [])
+            if isinstance(facts, list) and len(facts) > 0:
+                score += 1.0
 
-            # Synthesis (peso 0.3)
-            max_score += 0.3
-            synthesis = result.get("synthesis")
-            if isinstance(synthesis, dict):
-                if synthesis.get("executiveSummary"):
-                    score += 0.15
-                conclusions = synthesis.get("conclusions")
-                if isinstance(conclusions, list) and len(conclusions) > 0:
-                    score += 0.15
+            # Conclusions
+            conclusions = result.get("conclusions", [])
+            if isinstance(conclusions, list) and len(conclusions) > 0:
+                score += 1.0
+
+            # Issues ou Recommendations
+            issues = result.get("issues", [])
+            recs = result.get("recommendations", [])
+            if (isinstance(issues, list) and len(issues) > 0) or \
+               (isinstance(recs, list) and len(recs) > 0):
+                score += 1.0
 
         except Exception as e:
             logger.debug(f"Error calculating confidence: {e}")
             return 0.3
 
-        # Normalizar para 0-1
-        confidence = score / max_score if max_score > 0 else 0.0
-
-        # Mínimo de 0.3 se temos algum conteúdo válido
-        if score > 0 and confidence < 0.3:
-            confidence = 0.3
-
-        return round(confidence, 2)
+        confidence = score / max_score
+        return round(max(confidence, 0.3), 2)
 
     def _parse_json_response(self, text: str) -> Dict[str, Any]:
         """Extrai JSON da resposta do LLM e retorna um dict completamente limpo."""
@@ -936,8 +676,8 @@ class SchemaInferrer:
         """Extrai seções principais do JSON usando busca mais robusta."""
         sections = {}
 
-        # Padrões para encontrar início de seções
-        section_names = ["metadata", "entities", "evidence", "analysis", "timeline", "synthesis"]
+        # Padrões para encontrar início de seções (novo schema simplificado)
+        section_names = ["metadata", "actors", "keyDates", "keyFacts", "values", "issues", "conclusions", "recommendations"]
 
         for name in section_names:
             # Encontrar início da seção
