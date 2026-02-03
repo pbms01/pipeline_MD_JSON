@@ -1,112 +1,42 @@
-# Prompt de Descoberta Indutiva de Schema
+# Descoberta Indutiva de Schema
 
-Você é um especialista em análise documental. Sua tarefa é descobrir a ESTRUTURA NATURAL deste documento.
+Analise o documento e extraia sua estrutura natural.
 
-## Instruções
-
-1. **Identifique o tipo de documento** (contrato, ata, laudo, processo, relatório, etc.)
-
-2. **Descubra a estrutura inerente** - Cada tipo de documento tem sua própria organização natural:
-   - Contrato: partes, objeto, valor, prazo, obrigações, penalidades
-   - Ata: data, participantes, pauta, deliberações, encaminhamentos
-   - Laudo: objeto, metodologia, constatações, conclusão técnica
-   - Processo: partes, pedido, causa de pedir, provas, decisão
-   - Relatório: objetivo, metodologia, resultados, conclusões
-   - etc.
-
-3. **Extraia os dados** conforme a estrutura descoberta
-
-## Formato de Resposta (JSON)
+## Formato de Resposta
 
 ```json
 {
-  "documentType": "tipo identificado",
-  "title": "título descritivo",
-  "date": "YYYY-MM-DD ou null",
-  "summary": "resumo em 2-3 frases",
+  "documentType": "contrato|ata|laudo|processo|relatorio|outro",
+  "title": "título curto",
+  "date": "YYYY-MM-DD",
+  "summary": "uma frase",
   "schema": {
-    "description": "breve descrição da estrutura do documento",
-    "sections": ["lista das seções principais identificadas"]
+    "description": "tipo de documento em uma frase",
+    "sections": ["seção1", "seção2", "seção3"]
   },
-  "extractedData": {
-    // Estrutura ESPECÍFICA para este tipo de documento
-    // Use nomes de campos que façam sentido para ESTE documento
-  }
+  "extractedData": {}
 }
 ```
 
-## Exemplos de extractedData por tipo:
+## REGRAS CRÍTICAS
 
-**Contrato:**
-```json
-"extractedData": {
-  "partes": [{"nome": "", "papel": "contratante|contratado", "documento": ""}],
-  "objeto": "descrição do objeto",
-  "valor": {"total": 0, "moeda": "BRL", "formaPagamento": ""},
-  "vigencia": {"inicio": "", "fim": "", "prazo": ""},
-  "obrigacoes": {"contratante": [], "contratado": []},
-  "garantias": [],
-  "penalidades": [],
-  "foro": ""
-}
-```
+1. **MÁXIMO 3000 caracteres** no JSON total
+2. **MÁXIMO 3 itens** por array
+3. **Strings curtas** - máximo 100 caracteres cada
+4. **Sem arrays aninhados** em extractedData
+5. **Omita campos vazios**
+6. **APENAS JSON** - sem markdown, sem explicações
 
-**Ata de Reunião:**
-```json
-"extractedData": {
-  "reuniao": {"data": "", "hora": "", "local": "", "tipo": ""},
-  "participantes": [{"nome": "", "cargo": "", "presenca": "presente|ausente"}],
-  "pauta": ["item1", "item2"],
-  "deliberacoes": [{"assunto": "", "decisao": "", "votos": ""}],
-  "encaminhamentos": [{"acao": "", "responsavel": "", "prazo": ""}]
-}
-```
+## extractedData - seja BREVE
 
-**Laudo/Parecer Técnico:**
-```json
-"extractedData": {
-  "identificacao": {"numero": "", "data": "", "solicitante": ""},
-  "objeto": "descrição do que foi analisado",
-  "metodologia": "como foi feita a análise",
-  "constatacoes": [{"item": "", "descricao": "", "evidencia": ""}],
-  "conclusao": "conclusão técnica",
-  "recomendacoes": []
-}
-```
+Para cada tipo, extraia apenas os campos mais importantes:
 
-**Processo Judicial:**
-```json
-"extractedData": {
-  "processo": {"numero": "", "vara": "", "comarca": ""},
-  "partes": {"autor": [], "reu": [], "terceiros": []},
-  "objeto": "tipo de ação",
-  "pedidos": [],
-  "fundamentacao": "resumo dos fundamentos",
-  "provas": [],
-  "decisao": {"tipo": "", "dispositivo": "", "data": ""}
-}
-```
+- **Contrato**: partes (nomes), objeto (1 frase), valor, vigência
+- **Ata**: data, participantes (nomes), deliberações (resumidas)
+- **Laudo**: objeto, conclusão
+- **Processo**: número, partes, pedido, decisão
+- **Relatório**: objetivo, conclusão
 
-**Relatório:**
-```json
-"extractedData": {
-  "identificacao": {"titulo": "", "autor": "", "data": ""},
-  "objetivo": "objetivo do relatório",
-  "metodologia": "como foi realizado",
-  "resultados": [],
-  "conclusoes": [],
-  "recomendacoes": []
-}
-```
-
-## Regras
-
-1. **DESCUBRA** a estrutura - não force um schema predefinido
-2. Use campos que façam sentido para ESTE documento específico
-3. Seja conciso - máximo 5 itens por array, exceto quando essencial
-4. Omita campos sem dados (não inclua campos vazios ou null)
-5. Retorne APENAS JSON válido, sem texto antes ou depois
-
-## Documento para Análise
+## Documento
 
 {document_text}

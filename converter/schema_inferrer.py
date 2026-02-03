@@ -252,7 +252,7 @@ class SchemaInferrer:
             # Chamar LLM
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=8192,  # Aumentado para schema completo
+                max_tokens=2048,  # Limitado para forçar respostas concisas
                 messages=[{
                     "role": "user",
                     "content": self.inference_prompt.replace("{document_text}", text_to_analyze)
