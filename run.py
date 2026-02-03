@@ -13,6 +13,15 @@ import os
 import sys
 from pathlib import Path
 
+# Carregar .env do diretório do script
+from dotenv import load_dotenv
+_script_dir = Path(__file__).parent.absolute()
+_env_file = _script_dir / ".env"
+if _env_file.exists():
+    load_dotenv(_env_file)
+else:
+    load_dotenv()  # Busca padrão
+
 
 def check_dependencies():
     """Verifica se dependências estão instaladas."""
