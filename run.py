@@ -3,7 +3,7 @@
 run.py - Script de inicialização do Pipeline MD/JSON v3.
 
 Uso:
-    python run.py              # Inicia servidor FastAPI na porta 8000
+    python run.py              # Inicia servidor FastAPI na porta 8080
     python run.py --port 3000  # Porta customizada
     python run.py --streamlit  # Usa Streamlit ao invés de FastAPI
     python run.py --help       # Mostra ajuda
@@ -63,7 +63,7 @@ def check_api_key():
         print("Continuando mesmo assim...\n")
 
 
-def run_fastapi(host: str = "127.0.0.1", port: int = 8000, reload: bool = False):
+def run_fastapi(host: str = "127.0.0.1", port: int = 8080, reload: bool = False):
     """Inicia servidor FastAPI."""
     try:
         import uvicorn
@@ -138,8 +138,8 @@ def main():
     parser.add_argument(
         "--port", "-p",
         type=int,
-        default=8000,
-        help="Porta do servidor (padrão: 8000 para FastAPI, 8501 para Streamlit)"
+        default=8080,
+        help="Porta do servidor (padrão: 8080 para FastAPI, 8501 para Streamlit)"
     )
 
     parser.add_argument(
@@ -178,7 +178,7 @@ def main():
 
     # Iniciar servidor
     if args.streamlit:
-        port = args.port if args.port != 8000 else 8501
+        port = args.port if args.port != 8080 else 8501
         run_streamlit(port)
     else:
         run_fastapi(args.host, args.port, args.reload)
